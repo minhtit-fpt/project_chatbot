@@ -6,6 +6,14 @@
 
 ---
 
+## Rules
+
+1. Luôn đọc `.claude/plan.md` trước khi bắt đầu làm việc.
+2. Sau mỗi phase hoàn thành, cập nhật tiến độ vào `.claude/memory.md`.
+3. **Không bao giờ commit thẳng vào `main`** — mọi thay đổi phải tạo branch riêng, sau đó mở PR để merge.
+
+---
+
 ## Tổng quan dự án
 
 **Mục tiêu**: Chatbot trả lời câu hỏi khách hàng (FAQ bán hàng) dựa trên dữ liệu từ Obsidian vault.
