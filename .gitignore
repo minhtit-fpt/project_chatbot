@@ -1,10 +1,9 @@
 # Environment
 .env
-.env.*
 
-# Data & Index
-data/
-logs/
+# Data & Index (keep placeholder, ignore generated files)
+data/index.json
+logs/conversations.db
 
 # Python
 __pycache__/

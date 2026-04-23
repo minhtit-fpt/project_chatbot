@@ -42,7 +42,6 @@ Top 5 notes → Gemini 2.5 Flash → Trả lời + citations
 | LLM | Gemini 2.5 Flash (production) / Gemini 2.5 Pro (phức tạp) |
 | Vector store | file `index.json` (in-memory cosine similarity) |
 | Data source | Obsidian Vault (>1000 notes, local) |
-| Frontend | Web widget (HTML/JS) |
 | Deployment | Local — máy công ty |
 | Logging | SQLite (`logs/conversations.db`) |
 
@@ -72,9 +71,6 @@ project_chatbot/
 ├── api/
 │   ├── __init__.py
 │   └── main.py                 # FastAPI app, endpoint /chat
-├── widget/
-│   ├── index.html              # Chat widget standalone
-│   └── widget.js               # Nhúng vào website
 ├── data/
 │   └── index.json              # Vector index (gitignore)
 └── logs/
