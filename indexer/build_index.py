@@ -4,6 +4,7 @@ Usage:
     python -m indexer.build_index          # full rebuild
     python -m indexer.build_index --update # only re-embed changed notes
 """
+import datetime
 import json
 import sys
 import time
@@ -14,17 +15,26 @@ from indexer.obsidian_loader import load_vault
 from indexer.embedder import embed_texts
 
 
+class _DateEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, (datetime.date, datetime.datetime)):
+            return obj.isoformat()
+        return super().default(obj)
+
+
 def build_full_index() -> None:
     print(f"[build_index] Loading vault from {config.OBSIDIAN_VAULT_PATH} ...")
     docs = load_vault(config.OBSIDIAN_VAULT_PATH)
     print(f"[build_index] {len(docs)} documents loaded")
 
     texts = [d["content"] for d in docs]
-    print(f"[build_index] Embedding {len(texts)} documents ...")
+    total = len(texts)
+    print(f"[build_index] Embedding {total} documents ...")
     t0 = time.time()
     embeddings = embed_texts(texts)
     elapsed = time.time() - t0
-    print(f"[build_index] Embedding done in {elapsed:.1f}s")
+    rate = total / elapsed if elapsed > 0 else 0
+    print(f"[build_index] Embedding done in {elapsed:.1f}s ({rate:.1f} docs/s)")
 
     records = []
     for doc, emb in zip(docs, embeddings):
@@ -37,7 +47,7 @@ def build_full_index() -> None:
         })
 
     config.INDEX_PATH.parent.mkdir(parents=True, exist_ok=True)
-    config.INDEX_PATH.write_text(json.dumps(records, ensure_ascii=False), encoding="utf-8")
+    config.INDEX_PATH.write_text(json.dumps(records, ensure_ascii=False, cls=_DateEncoder), encoding="utf-8")
     print(f"[build_index] Saved {len(records)} records to {config.INDEX_PATH}")
 
 

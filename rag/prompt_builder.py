@@ -12,8 +12,8 @@ Vui lòng liên hệ bộ phận hỗ trợ để được giải đáp chi ti�
 """
 
 
-def build_prompt(question: str, context_docs: list[dict]) -> list[dict]:
-    """Return the messages list for the Gemini chat API."""
+def build_prompt(question: str, context_docs: list[dict]) -> str:
+    """Return the user message string for the Gemini generate_content API."""
     if context_docs:
         context_parts = []
         for i, doc in enumerate(context_docs, 1):
@@ -21,10 +21,5 @@ def build_prompt(question: str, context_docs: list[dict]) -> list[dict]:
                 f"--- Tài liệu {i}: {doc['title']} ---\n{doc['content'][:1500]}"
             )
         context_block = "\n\n".join(context_parts)
-        user_content = f"Tài liệu tham khảo:\n\n{context_block}\n\nCâu hỏi của khách hàng: {question}"
-    else:
-        user_content = f"Câu hỏi của khách hàng: {question}"
-
-    return [
-        {"role": "user", "parts": [user_content]},
-    ]
+        return f"Tài liệu tham khảo:\n\n{context_block}\n\nCâu hỏi của khách hàng: {question}"
+    return f"Câu hỏi của khách hàng: {question}"

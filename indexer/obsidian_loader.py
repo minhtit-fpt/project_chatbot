@@ -80,7 +80,7 @@ def load_vault(vault_path: Path) -> list[dict]:
         title = meta.get("title") or f.stem
         keywords = meta.get("keywords", [])
         if isinstance(keywords, list):
-            keyword_str = " ".join(keywords)
+            keyword_str = " ".join(str(k) for k in keywords)
         else:
             keyword_str = str(keywords)
 

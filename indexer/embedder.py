@@ -1,36 +1,47 @@
 import time
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 import config
 
-genai.configure(api_key=config.GEMINI_API_KEY)
+_client = genai.Client(api_key=config.GEMINI_API_KEY)
 
 
 def embed_texts(texts: list[str], task_type: str = "RETRIEVAL_DOCUMENT") -> list[list[float]]:
-    """Embed a list of texts in batches, with retry on transient errors."""
+    import time as _time
     embeddings = []
-    batch_size = config.EMBEDDING_BATCH_SIZE
+    total = len(texts)
+    t_start = _time.time()
 
-    for i in range(0, len(texts), batch_size):
-        batch = texts[i : i + batch_size]
-        embeddings.extend(_embed_batch(batch, task_type))
+    for i, text in enumerate(texts):
+        embeddings.append(_embed_one(text, task_type))
+        n_done = i + 1
+        if n_done % 50 == 0 or n_done == total:
+            elapsed = _time.time() - t_start
+            rate = n_done / elapsed if elapsed > 0 else 0
+            eta = (total - n_done) / rate if rate > 0 else 0
+            print(
+                f"[embedder] {n_done}/{total} "
+                f"({n_done * 100 // total}%) "
+                f"— {rate:.1f} docs/s "
+                f"— ETA {eta / 60:.1f} phút"
+            )
 
     return embeddings
 
 
 def embed_query(text: str) -> list[float]:
-    results = _embed_batch([text], task_type="RETRIEVAL_QUERY")
-    return results[0]
+    return _embed_one(text, task_type="RETRIEVAL_QUERY")
 
 
-def _embed_batch(texts: list[str], task_type: str, retries: int = 3) -> list[list[float]]:
+def _embed_one(text: str, task_type: str, retries: int = 3) -> list[float]:
     for attempt in range(retries):
         try:
-            result = genai.embed_content(
+            response = _client.models.embed_content(
                 model=config.EMBEDDING_MODEL,
-                content=texts,
-                task_type=task_type,
+                contents=text,
+                config=types.EmbedContentConfig(task_type=task_type),
             )
-            return result["embedding"] if len(texts) == 1 else result["embedding"]
+            return response.embeddings[0].values
         except Exception as exc:
             if attempt == retries - 1:
                 raise RuntimeError(f"Embedding failed after {retries} attempts: {exc}") from exc
