@@ -17,6 +17,17 @@ TOP_K = 5
 RETRIEVAL_CANDIDATE_K = 30  # retrieve rộng rồi re-rank
 EMBEDDING_BATCH_SIZE = 20
 
+# Retry / timeout cho Gemini API
+GEMINI_MAX_RETRIES = 5
+GEMINI_RETRY_BASE_WAIT = 1.0   # seconds, nhân đôi mỗi lần (exponential backoff)
+GEMINI_RETRY_MAX_WAIT = 32.0   # giới hạn trên
+GEMINI_TIMEOUT = 30.0           # timeout mỗi lần gọi API (seconds)
+CHAT_FALLBACK_MODEL = "gemini-2.0-flash"  # dùng khi model chính 503
+
+# Response cache (in-memory, TTL-based)
+RESPONSE_CACHE_TTL = 300        # seconds (5 phút)
+RESPONSE_CACHE_MAX_SIZE = 256   # số câu hỏi tối đa được cache
+
 EXCLUDE_PATTERNS = [
     "Daily Notes",
     "Templates",
