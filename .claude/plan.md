@@ -5,6 +5,47 @@
 
 ---
 
+## Phase 0 — Hạ tầng & Sync (làm trước Phase 1)
+
+**Mục tiêu**: Obsidian vault trên máy cá nhân được sync tự động lên Ubuntu server.
+
+### Quyết định: dùng Syncthing
+- Obsidian chạy trên máy cá nhân (Windows/Mac), không chạy được trên Ubuntu server headless
+- Syncthing sync file `.md` real-time, P2P, miễn phí, không qua cloud
+- Server chỉ cần đọc folder vault — không cần Obsidian cài trên server
+
+### Tasks
+
+- [ ] 0.1 Cài Syncthing trên Ubuntu server
+  ```bash
+  sudo apt install syncthing
+  sudo systemctl enable syncthing@$USER
+  sudo systemctl start syncthing@$USER
+  ```
+  - Mở port 8384 (Web UI) chỉ cho localhost hoặc VPN: `http://localhost:8384`
+  - Mở port 22000 (sync protocol) nếu máy cá nhân kết nối trực tiếp
+
+- [ ] 0.2 Cài Syncthing trên máy cá nhân
+  - Tải tại https://syncthing.net
+  - Hoặc dùng plugin **Obsidian Livesync** nếu muốn tích hợp sâu hơn vào Obsidian
+
+- [ ] 0.3 Kết nối 2 thiết bị
+  - Lấy Device ID của server → thêm vào Syncthing máy cá nhân
+  - Share folder vault (thư mục Obsidian) từ máy cá nhân → server
+  - Đặt server là **Receive Only** (chỉ nhận, không ghi ngược lại)
+
+- [ ] 0.4 Xác nhận sync hoạt động
+  - Tạo/sửa 1 note trên Obsidian máy cá nhân
+  - Kiểm tra file xuất hiện trên server trong vài giây
+  - Ghi lại đường dẫn vault trên server → dùng cho `OBSIDIAN_VAULT_PATH` trong `.env`
+
+- [ ] 0.5 Cập nhật `.env` và `CLAUDE.md`
+  - Ghi `OBSIDIAN_VAULT_PATH=/path/to/vault` trên server
+
+**Hoàn thành Phase 0 khi**: Sửa note trên Obsidian → file tự động xuất hiện trên server trong <10 giây.
+
+---
+
 ## Phase 1 — MVP (1-2 tuần)
 
 **Mục tiêu**: Chạy được pipeline end-to-end, test với câu hỏi mẫu.
@@ -18,7 +59,7 @@
 
 - [ ] 1.2 Indexer — đọc Obsidian vault
   - `obsidian_loader.py`: đọc tất cả `.md`, parse frontmatter YAML, resolve `[[wiki-links]]`, expand `![[embed]]`, exclude daily notes/templates
-  - `embedder.py`: gọi `gemini-embedding-004`, xử lý batch, retry on error
+  - `embedder.py`: gọi `gemini-embedding-2`, xử lý batch, retry on error
   - `build_index.py`: chạy full index → lưu `data/index.json` (format: `{path, title, content, embedding, metadata}`)
 
 - [ ] 1.3 RAG pipeline

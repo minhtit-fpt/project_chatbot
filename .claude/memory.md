@@ -7,9 +7,9 @@
 
 ## Trạng thái hiện tại
 
-**Phase đang làm**: Phase 1 — MVP
+**Phase đang làm**: Phase 1 — MVP (tasks 1.1–1.4 đã xong, còn 1.5 test)
 **Bắt đầu**: 2026-04-21
-**Cập nhật lần cuối**: 2026-04-21
+**Cập nhật lần cuối**: 2026-04-23
 
 ---
 
@@ -29,16 +29,17 @@
 ## Đang làm
 
 ### Phase 1 — MVP
-- [ ] 1.1 Setup môi trường (`.env`, `config.py`, `requirements.txt`)
-- [ ] 1.2 Indexer (`obsidian_loader.py`, `embedder.py`, `build_index.py`)
-- [ ] 1.3 RAG pipeline (`retriever.py`, `prompt_builder.py`, `chat_engine.py`)
-- [ ] 1.4 API (`api/main.py`)
-- [ ] 1.5 Test MVP (20-30 câu hỏi mẫu)
+- [x] 1.1 Setup môi trường: `requirements.txt`, `.env.example`, `config.py`
+- [x] 1.2 Indexer: `obsidian_loader.py`, `embedder.py`, `build_index.py`
+- [x] 1.3 RAG pipeline: `retriever.py`, `prompt_builder.py`, `chat_engine.py`
+- [x] 1.4 API: `api/main.py` (POST /chat, GET /health, GET /widget)
+- [ ] 1.5 Test MVP với 20-30 câu hỏi mẫu
 
 ---
 
 ## Chưa bắt đầu
 
+- Phase 1 — MVP
 - Phase 2 — Production-ready
 - Phase 3 — Tối ưu
 - Phase 4 — Fine-tune
@@ -47,7 +48,7 @@
 
 ## Ghi chú / Quyết định trong quá trình làm
 
-_(Ghi lại các quyết định nhỏ, vấn đề gặp phải, và cách giải quyết trong quá trình code)_
+- **2026-04-21**: Deployment là Ubuntu server headless → Obsidian không chạy được trực tiếp trên server. Quyết định dùng **Syncthing** để sync vault từ máy cá nhân lên server real-time. Server set Receive Only, chỉ đọc file `.md`. Thêm Phase 0 vào plan trước Phase 1.
 
 ---
 

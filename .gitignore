@@ -1,10 +1,9 @@
 # Environment
 .env
-.env.*
 
-# Data & Index
-data/
-logs/
+# Data & Index (keep placeholder, ignore generated files)
+data/index.json
+logs/conversations.db
 
 # Python
 __pycache__/
@@ -32,3 +31,7 @@ Thumbs.db
 
 # Jupyter
 .ipynb_checkpoints/
+
+test_chat.py
+debug_retrieval.py
+check_api.py
