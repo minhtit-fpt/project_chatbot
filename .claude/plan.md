@@ -59,7 +59,7 @@
 
 - [ ] 1.2 Indexer — đọc Obsidian vault
   - `obsidian_loader.py`: đọc tất cả `.md`, parse frontmatter YAML, resolve `[[wiki-links]]`, expand `![[embed]]`, exclude daily notes/templates
-  - `embedder.py`: gọi `gemini-embedding-004`, xử lý batch, retry on error
+  - `embedder.py`: gọi `gemini-embedding-2`, xử lý batch, retry on error
   - `build_index.py`: chạy full index → lưu `data/index.json` (format: `{path, title, content, embedding, metadata}`)
 
 - [ ] 1.3 RAG pipeline
