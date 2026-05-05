@@ -1,10 +1,12 @@
 """
-Retry helper cho Gemini API calls.
+Retry utilities cho Gemini API calls.
 Xử lý 503 Service Unavailable và 429 Resource Exhausted bằng
 exponential backoff + full jitter.
+
+Logic chọn model nằm trong chat_engine.py (mỗi retry = 1 model khác).
+Module này chỉ cung cấp: is_retryable(), wait_seconds(), call_with_retry().
 """
 
-import asyncio
 import logging
 import random
 import time
@@ -30,60 +32,43 @@ _RETRYABLE_PHRASES = (
 )
 
 
-def _is_retryable(exc: Exception) -> bool:
+def is_retryable(exc: Exception) -> bool:
+    """Trả về True nếu exception là lỗi tạm thời có thể retry."""
     msg = str(exc).lower()
     return any(phrase in msg for phrase in _RETRYABLE_PHRASES)
 
 
-def _wait_seconds(attempt: int) -> float:
-    """Full-jitter exponential backoff."""
+def wait_seconds(attempt: int) -> float:
+    """Full-jitter exponential backoff. attempt bắt đầu từ 0."""
     cap = min(config.GEMINI_RETRY_MAX_WAIT, config.GEMINI_RETRY_BASE_WAIT * (2 ** attempt))
     return random.uniform(0, cap)
 
 
-def call_with_retry(fn: Callable[[], T]) -> T:
-    """Gọi fn() đồng bộ với retry. Dùng cho code không phải async."""
+def call_with_retry(
+    fn: Callable[[], T],
+    max_retries: int | None = None,
+    base_wait: float | None = None,
+) -> T:
+    """Gọi fn() đồng bộ với retry (dùng cho embedder, code sync, và eval).
+
+    max_retries / base_wait: nếu None thì lấy từ config (mặc định chatbot).
+    Eval nên truyền max_retries=8, base_wait=5.0 để chờ lâu hơn giữa các retry.
+    """
+    _max = max_retries if max_retries is not None else config.GEMINI_MAX_RETRIES
+    _base = base_wait if base_wait is not None else config.GEMINI_RETRY_BASE_WAIT
     last_exc: Exception | None = None
-    for attempt in range(config.GEMINI_MAX_RETRIES):
+    for attempt in range(_max):
         try:
             return fn()
         except Exception as exc:
-            if not _is_retryable(exc):
+            if not is_retryable(exc):
                 raise
             last_exc = exc
-            wait = _wait_seconds(attempt)
+            cap = min(config.GEMINI_RETRY_MAX_WAIT, _base * (2 ** attempt))
+            wait = random.uniform(0, cap)
             logger.warning(
                 "Gemini API lỗi (attempt %d/%d): %s — retry sau %.1fs",
-                attempt + 1,
-                config.GEMINI_MAX_RETRIES,
-                exc,
-                wait,
+                attempt + 1, _max, exc, wait,
             )
             time.sleep(wait)
-    raise RuntimeError(
-        f"Gemini API thất bại sau {config.GEMINI_MAX_RETRIES} lần thử"
-    ) from last_exc
-
-
-async def async_call_with_retry(fn: Callable[[], T]) -> T:
-    """Gọi fn() trong thread pool với retry async-safe."""
-    last_exc: Exception | None = None
-    for attempt in range(config.GEMINI_MAX_RETRIES):
-        try:
-            return await asyncio.to_thread(fn)
-        except Exception as exc:
-            if not _is_retryable(exc):
-                raise
-            last_exc = exc
-            wait = _wait_seconds(attempt)
-            logger.warning(
-                "Gemini API lỗi (attempt %d/%d): %s — retry sau %.1fs",
-                attempt + 1,
-                config.GEMINI_MAX_RETRIES,
-                exc,
-                wait,
-            )
-            await asyncio.sleep(wait)
-    raise RuntimeError(
-        f"Gemini API thất bại sau {config.GEMINI_MAX_RETRIES} lần thử"
-    ) from last_exc
+    raise RuntimeError(f"Gemini API thất bại sau {_max} lần thử") from last_exc

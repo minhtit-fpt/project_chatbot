@@ -35,3 +35,5 @@ Thumbs.db
 test_chat.py
 debug_retrieval.py
 check_api.py
+/eval
+/.deepeval

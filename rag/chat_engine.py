@@ -1,11 +1,10 @@
 """
 Chat engine — orchestrate retriever → Gemini → response.
 
-Cải thiện so với v1:
 - answer() là async, không block FastAPI event loop
-- Retry với exponential backoff + jitter cho 503/429
-- Fallback sang model nhẹ hơn nếu model chính liên tục lỗi
-- TTL cache in-memory để tránh gọi API lặp với câu hỏi giống nhau
+- Mỗi retry dùng model khác theo CHAT_MODEL_CHAIN (tránh 503 cùng model)
+- Exponential backoff + full jitter giữa các lần retry
+- TTL cache in-memory để câu hỏi giống nhau trả về ngay
 """
 
 import asyncio
@@ -21,7 +20,7 @@ from google.genai import types
 import config
 from rag.retriever import Retriever
 from rag.prompt_builder import SYSTEM_PROMPT, build_prompt
-from rag.retry import async_call_with_retry
+from rag.retry import is_retryable, wait_seconds
 
 logger = logging.getLogger(__name__)
 
@@ -85,18 +84,13 @@ async def _get_retriever() -> Retriever:
     return _retriever
 
 
-def get_retriever() -> Retriever | None:
-    """Sync accessor dùng cho startup event."""
-    return _retriever
-
-
 async def init_retriever() -> None:
     """Gọi lúc startup để pre-load index vào RAM."""
     await _get_retriever()
 
 
 # ---------------------------------------------------------------------------
-# Gemini call helpers
+# Gemini call với model cycling
 # ---------------------------------------------------------------------------
 
 def _generate(model: str, messages: list, system: str) -> str:
@@ -109,20 +103,48 @@ def _generate(model: str, messages: list, system: str) -> str:
 
 
 async def _call_gemini(messages: list, system: str) -> str:
-    """Gọi Gemini với retry. Fallback sang model nhẹ hơn nếu model chính lỗi liên tục."""
-    try:
-        return await async_call_with_retry(
-            lambda: _generate(config.CHAT_MODEL, messages, system)
-        )
-    except RuntimeError:
-        logger.warning(
-            "Model chính (%s) thất bại, fallback sang %s",
-            config.CHAT_MODEL,
-            config.CHAT_FALLBACK_MODEL,
-        )
-        return await async_call_with_retry(
-            lambda: _generate(config.CHAT_FALLBACK_MODEL, messages, system)
-        )
+    """
+    Gọi Gemini với retry.
+    Mỗi lần retry chọn model khác từ CHAT_MODEL_CHAIN.
+    Ví dụ với chain = [flash, flash-8b, flash, flash-8b, flash]:
+      attempt 0 → gemini-2.5-flash
+      attempt 1 → gemini-2.5-flash-8b
+      attempt 2 → gemini-2.5-flash
+      ...
+    """
+    chain = config.CHAT_MODEL_CHAIN
+    last_exc: Exception | None = None
+
+    for attempt in range(config.GEMINI_MAX_RETRIES):
+        model = chain[attempt % len(chain)]
+        try:
+            # chạy sync SDK trong thread pool để không block event loop
+            result = await asyncio.to_thread(
+                lambda m=model: _generate(m, messages, system)
+            )
+            if attempt > 0:
+                logger.info(
+                    "Thành công với model '%s' sau %d lần thử", model, attempt + 1
+                )
+            return result
+        except Exception as exc:
+            if not is_retryable(exc):
+                raise
+            last_exc = exc
+            secs = wait_seconds(attempt)
+            logger.warning(
+                "[%d/%d] Model '%s' lỗi: %s — đổi model, retry sau %.1fs",
+                attempt + 1,
+                config.GEMINI_MAX_RETRIES,
+                model,
+                exc,
+                secs,
+            )
+            await asyncio.sleep(secs)
+
+    raise RuntimeError(
+        f"Tất cả models thất bại sau {config.GEMINI_MAX_RETRIES} lần thử"
+    ) from last_exc
 
 
 # ---------------------------------------------------------------------------
@@ -134,7 +156,6 @@ async def answer(question: str) -> dict:
     Trả về dict {answer, sources, latency_ms, cached}.
     Hoàn toàn async — an toàn để gọi trong FastAPI handler.
     """
-    # Cache hit
     cached = _cache.get(question)
     if cached is not None:
         logger.debug("Cache hit: %s", question[:60])
@@ -153,7 +174,12 @@ async def answer(question: str) -> dict:
         {"title": d["title"], "path": d["path"], "score": round(d["score"], 4)}
         for d in context_docs
     ]
-    result = {"answer": answer_text, "sources": sources, "latency_ms": latency_ms, "cached": False}
+    result = {
+        "answer": answer_text,
+        "sources": sources,
+        "latency_ms": latency_ms,
+        "cached": False,
+    }
 
     _cache.set(question, result)
     return result
