@@ -9,7 +9,7 @@
 
 **Phase đang làm**: Phase 1 — MVP (tasks 1.1–1.4 đã xong, còn 1.5 test)
 **Bắt đầu**: 2026-04-21
-**Cập nhật lần cuối**: 2026-04-23
+**Cập nhật lần cuối**: 2026-05-20
 
 ---
 
@@ -33,7 +33,19 @@
 - [x] 1.2 Indexer: `obsidian_loader.py`, `embedder.py`, `build_index.py`
 - [x] 1.3 RAG pipeline: `retriever.py`, `prompt_builder.py`, `chat_engine.py`
 - [x] 1.4 API: `api/main.py` (POST /chat, GET /health, GET /widget)
-- [ ] 1.5 Test MVP với 20-30 câu hỏi mẫu
+- [x] 1.5 Chạy evaluation 30 câu hỏi → kết quả 0/30 PASS (xem `.claude/plan-fix-chatbot.md`)
+
+### Phase 1.5 — Sửa lỗi sau Evaluation (xem `.claude/plan-fix-chatbot.md`)
+- [ ] Fix 1: Sửa DeepEval metric (GEval score sai, toàn 0.02–0.07)
+- [x] Fix 2: Thêm 5 notes vào vault `D:\chatbot\` (dữ liệu từ dienmaythienphu.vn 2026-05-20)
+  - [x] `Dieu-hoa-tong-quan.md`
+  - [x] `Chinh-sach-van-chuyen-lap-dat.md`
+  - [x] `Chinh-sach-tra-gop.md`
+  - [x] `Pham-vi-kinh-doanh.md`
+  - [x] `May-giat-tu-van.md`
+  - [ ] Chạy lại `build_index.py` để re-embed
+- [ ] Fix 3: Thêm keywords vào `Chinh-sach-bao-hanh.md`
+- [ ] Fix 4: Sửa system prompt `rag/prompt_builder.py`
 
 ---
 
