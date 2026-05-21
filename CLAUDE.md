@@ -67,7 +67,8 @@ project_chatbot/
 │   ├── __init__.py
 │   ├── retriever.py            # Cosine similarity in-memory, top-k
 │   ├── prompt_builder.py       # System prompt + context builder
-│   └── chat_engine.py          # Orchestrator RAG pipeline
+│   ├── retry.py                # Exponential backoff + jitter cho Gemini API
+│   └── chat_engine.py          # Orchestrator RAG pipeline (async, TTL cache)
 ├── api/
 │   ├── __init__.py
 │   └── main.py                 # FastAPI app, endpoint /chat
@@ -94,6 +95,12 @@ project_chatbot/
 - Mục tiêu tốc độ <5s/câu hỏi
 - Flash: nhanh, rẻ, đủ thông minh cho FAQ
 - Pro: chỉ dùng routing tự động khi câu hỏi phức tạp
+
+### Reliability & Performance (branch feat/reliability-and-performance)
+- `answer()` là async — không block FastAPI event loop, dùng `asyncio.to_thread` cho sync SDK calls
+- `rag/retry.py`: exponential backoff + full jitter, retry tối đa 5 lần cho 503/429
+- Fallback tự động sang `gemini-2.0-flash` nếu model chính fail hết retry
+- TTL cache in-memory (256 entries, 5 phút) — câu hỏi giống nhau trả về ngay, latency ~0ms
 
 ### Fine-tune sẽ làm ở Phase 4 (chưa cần ngay)
 - Phase 4 chỉ kích hoạt khi đã có đủ log dữ liệu thật từ khách hàng
