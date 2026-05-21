@@ -91,7 +91,7 @@
   - Format: `[Nguồn: Tên note]`
 
 - [ ] 2.2 Logging
-  - Lưu mọi Q&A vào `logs/conversations.db` (SQLite)
+  - Lưu mọi Q&A vào MySQL (thay cho SQLite)
   - Schema: `id, timestamp, question, answer, sources, latency_ms, user_feedback`
   - Quan trọng: log này là dataset cho Phase 4 fine-tune
 
@@ -103,15 +103,7 @@
 - [ ] 2.4 Re-index tự động
   - Script watch vault, re-embed khi note thay đổi (chỉ embed note thay đổi, không rebuild toàn bộ)
 
-- [ ] 2.5 Web widget
-  - `widget/index.html`: giao diện chat standalone
-  - `widget/widget.js`: script có thể nhúng vào website bất kỳ
-  - Hiển thị citations trong UI
-
-- [ ] 2.6 Tích hợp kênh
-  - Tích hợp widget vào website công ty
-
-**Hoàn thành Phase 2 khi**: Chatbot live trên website, có logging đầy đủ, guardrails hoạt động.
+**Hoàn thành Phase 2 khi**: API production-ready, có logging MySQL đầy đủ, guardrails hoạt động, re-index tự động.
 
 ---
 
