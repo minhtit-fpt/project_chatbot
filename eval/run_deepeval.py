@@ -258,7 +258,7 @@ def write_result(ws: gspread.Worksheet, row_num: int, result: dict) -> None:
         result.get("run_at", ""),
         result.get("error", ""),
     ]]
-    ws.update(f"H{row_num}:O{row_num}", values)
+    ws.update(values, f"H{row_num}:O{row_num}")
 
 
 # ── Chatbot call ─────────────────────────────────────────────────────────────
@@ -269,7 +269,7 @@ async def call_direct(question: str) -> tuple[str, list[dict], int, list[str]]:
     Trả về: (answer, sources, latency_ms, retrieval_context_texts)
     retrieval_context_texts dùng cho FaithfulnessMetric.
     """
-    from rag.chat_engine import answer as engine_answer, _get_retriever
+    from rag.chat_engine import answer_async, _get_retriever
 
     # Lấy context_docs từ retriever để dùng cho FaithfulnessMetric
     retriever = await _get_retriever()
@@ -280,7 +280,7 @@ async def call_direct(question: str) -> tuple[str, list[dict], int, list[str]]:
         for d in context_docs
     ]
 
-    result = await engine_answer(question)
+    result = await answer_async(question)
     return result["answer"], result["sources"], result["latency_ms"], retrieval_context
 
 
@@ -304,23 +304,72 @@ async def call_http(question: str, api_url: str) -> tuple[str, list[dict], int, 
     return data["answer"], sources, data.get("latency_ms", 0), retrieval_context
 
 
-# ── DeepEval evaluation ──────────────────────────────────────────────────────
+# ── Custom Gemini Evaluator (bypass DeepEval GEval — bị bug với non-OpenAI models) ──
 
-def _measure_with_retry(metric, test_case) -> tuple[float | None, bool]:
-    """Gọi metric.measure() với retry từ rag/retry.py.
+_CORRECTNESS_PROMPT = """\
+Bạn là evaluator đánh giá chất lượng câu trả lời của một chatbot bán hàng điện máy.
 
-    Trả về (score, passed). Score = None nếu thất bại sau tất cả retry.
-    Dùng max_retries=8, base_wait=5.0 — phù hợp cho batch eval (không user-facing).
+Câu hỏi khách hàng: {question}
+Câu trả lời của bot: {bot_answer}
+Kết quả mong đợi: {expected_answer}
+
+Hãy chấm điểm câu trả lời của bot từ 0.0 đến 1.0 dựa trên:
+- 1.0: đúng và đầy đủ như kết quả mong đợi
+- 0.7-0.9: đúng nhưng thiếu một vài chi tiết phụ
+- 0.4-0.6: đúng một phần hoặc chưa đủ thông tin
+- 0.1-0.3: bot nói "chưa có thông tin" trong khi kết quả mong đợi cho thấy CÓ câu trả lời
+- 0.8-1.0: nếu kết quả mong đợi cho thấy shop KHÔNG bán/cung cấp dịch vụ đó \
+và bot trả lời đúng là không có — đây là câu trả lời ĐÚNG, điểm cao
+- 0.0: sai hoàn toàn hoặc mâu thuẫn
+
+Trả về JSON hợp lệ, KHÔNG thêm text hay markdown bên ngoài:
+{{"score": <float 0.0-1.0>, "reason": "<lý do ngắn trong 1 câu>"}}"""
+
+_RELEVANCY_PROMPT = """\
+Bạn là evaluator đánh giá câu trả lời của chatbot bán hàng điện máy.
+
+Câu hỏi khách hàng: {question}
+Câu trả lời của bot: {bot_answer}
+
+Đánh giá xem câu trả lời có relevant và hữu ích với câu hỏi không (0.0 đến 1.0):
+- 1.0: trả lời trực tiếp, đầy đủ, đúng chủ đề
+- 0.7-0.9: trả lời tốt nhưng hơi thừa hoặc thiếu
+- 0.4-0.6: trả lời một phần, chưa rõ ràng
+- 0.1-0.3: trả lời lạc đề hoặc "không có thông tin" không cần thiết
+- 0.0: không liên quan hoặc sai hoàn toàn
+
+Trả về JSON hợp lệ, KHÔNG thêm text hay markdown bên ngoài:
+{{"score": <float 0.0-1.0>, "reason": "<lý do ngắn trong 1 câu>"}}"""
+
+
+def _score_with_gemini(prompt: str, judge) -> tuple[float, str]:
+    """Gọi judge.generate() với prompt, parse JSON trả về (score, reason).
+
+    Trả về (-1.0, error_msg) nếu thất bại.
     """
     from rag.retry import call_with_retry
 
-    call_with_retry(
-        lambda: metric.measure(test_case),
-        max_retries=8,
-        base_wait=5.0,
-    )
-    score = metric.score
-    return (round(score, 4) if score is not None else None), metric.is_successful()
+    try:
+        raw = call_with_retry(
+            lambda: judge.generate(prompt),
+            max_retries=8,
+            base_wait=5.0,
+        )
+        text = raw if isinstance(raw, str) else str(raw)
+        # Tìm JSON trong response (bỏ qua markdown code block nếu có)
+        start = text.find("{")
+        end = text.rfind("}") + 1
+        if start >= 0 and end > start:
+            data = json.loads(text[start:end])
+            score = float(data.get("score", 0.0))
+            score = max(0.0, min(1.0, score))  # clamp 0-1
+            reason = data.get("reason", "")
+            return round(score, 4), reason
+        logger.warning("Không parse được JSON từ response: %s", text[:200])
+        return -1.0, f"parse error: {text[:100]}"
+    except Exception as exc:
+        logger.warning("Gemini judge lỗi: %s", exc)
+        return -1.0, str(exc)
 
 
 def run_metrics(
@@ -330,96 +379,56 @@ def run_metrics(
     retrieval_context: list[str],
     judge,
 ) -> dict:
-    """Chạy DeepEval metrics, luôn trả về score (kể cả khi fail).
+    """Custom evaluation bằng Gemini trực tiếp — bypass DeepEval GEval bug.
 
-    Metric chính: GEval correctness so với expected_answer (khi có).
-    Fallback:     AnswerRelevancyMetric (khi không có expected_answer).
-    Tham khảo:    FaithfulnessMetric (không ảnh hưởng pass/fail).
+    GEval với non-OpenAI models (Gemini) cho điểm sai do chia theo số steps.
+    Thay bằng: gọi Gemini trực tiếp với prompt JSON, parse score 0-1.
 
     pass = TRUE khi correctness >= 0.5.
-    Score luôn có giá trị: số 0-1 khi thành công, "ERR" khi thất bại sau retry.
     """
     import time
-    from deepeval.metrics import AnswerRelevancyMetric, FaithfulnessMetric, GEval
-    from deepeval.test_case import LLMTestCase, LLMTestCaseParams
 
-    test_case = LLMTestCase(
-        input=question,
-        actual_output=bot_answer,
-        expected_output=expected_answer or None,
-        retrieval_context=retrieval_context or None,
-    )
+    scores: dict = {"correctness": "ERR", "faithfulness": "N/A"}
 
-    scores: dict = {"correctness": "ERR", "faithfulness": "ERR"}
-
-    # ── Metric chính: GEval correctness (có expected) / AnswerRelevancy (không) ──
-    # Dùng evaluation_steps thay vì criteria — DeepEval khuyến nghị cho non-OpenAI models
-    # vì criteria đôi khi bị chia theo số steps → cho điểm cực nhỏ.
+    # ── Correctness / Relevancy ──────────────────────────────────────────────
     if expected_answer:
-        primary_metric = GEval(
-            name="Correctness",
-            evaluation_steps=[
-                "So sánh actual_output với expected_output để đánh giá mức độ chính xác.",
-                "Nếu actual_output đúng và đầy đủ như expected_output, cho điểm 1.0.",
-                "Nếu actual_output đúng nhưng thiếu một vài chi tiết phụ, cho điểm 0.7–0.9.",
-                "Nếu actual_output đúng một phần, thiếu nhiều thông tin hoặc cần hỏi thêm, cho điểm 0.4–0.6.",
-                "Nếu actual_output nói 'chưa có thông tin' hoặc từ chối trả lời trong khi "
-                "expected_output cho thấy cửa hàng CÓ câu trả lời rõ ràng, cho điểm 0.1–0.3.",
-                "Nếu expected_output cho thấy cửa hàng KHÔNG bán hoặc KHÔNG cung cấp dịch vụ "
-                "và actual_output trả lời đúng là không cung cấp, cho điểm 0.8–1.0.",
-                "Nếu actual_output sai hoàn toàn hoặc mâu thuẫn với expected_output, cho điểm 0.0.",
-            ],
-            evaluation_params=[
-                LLMTestCaseParams.INPUT,
-                LLMTestCaseParams.ACTUAL_OUTPUT,
-                LLMTestCaseParams.EXPECTED_OUTPUT,
-            ],
-            model=judge,
-            threshold=0.5,
-            async_mode=False,
-            verbose_mode=False,
+        prompt = _CORRECTNESS_PROMPT.format(
+            question=question,
+            bot_answer=bot_answer,
+            expected_answer=expected_answer,
         )
     else:
-        primary_metric = AnswerRelevancyMetric(
-            model=judge, threshold=0.5, async_mode=False, verbose_mode=False
-        )
+        prompt = _RELEVANCY_PROMPT.format(question=question, bot_answer=bot_answer)
 
-    primary_error = False
-    try:
-        score, primary_passed = _measure_with_retry(primary_metric, test_case)
-        scores["correctness"] = score if score is not None else "ERR"
+    score, reason = _score_with_gemini(prompt, judge)
+    primary_error = score < 0
+    if not primary_error:
+        scores["correctness"] = score
+        primary_passed = score >= 0.5
         if not primary_passed:
-            logger.debug(
-                "  correctness fail (%.2f): %s",
-                score or 0,
-                getattr(primary_metric, "reason", ""),
-            )
-    except Exception as exc:
-        logger.warning("Primary metric lỗi sau retry: %s", exc)
+            logger.debug("  correctness fail (%.2f): %s", score, reason)
+        else:
+            logger.debug("  correctness pass (%.2f): %s", score, reason)
+    else:
         primary_passed = False
-        primary_error = True
 
-    # Nghỉ ngắn giữa 2 metric để tránh burst
-    time.sleep(3)
+    # Nghỉ ngắn để tránh burst API
+    time.sleep(2)
 
-    # ── FaithfulnessMetric (tham khảo, không ảnh hưởng pass/fail) ─────────────
+    # ── Faithfulness (tham khảo, không ảnh hưởng pass/fail) ─────────────────
+    # Chỉ check khi có retrieval_context
     if retrieval_context:
-        faith_metric = FaithfulnessMetric(
-            model=judge, threshold=0.5, async_mode=False, verbose_mode=False
+        faith_prompt = (
+            "Bạn là evaluator. Câu trả lời của bot có dựa trên tài liệu tham khảo không?\n\n"
+            f"Tài liệu tham khảo:\n{chr(10).join(retrieval_context[:3])}\n\n"
+            f"Câu trả lời của bot: {bot_answer}\n\n"
+            "Chấm điểm 0.0-1.0: 1.0 = hoàn toàn dựa trên tài liệu, 0.0 = bịa thông tin.\n"
+            'Trả về JSON: {"score": <float>, "reason": "<1 câu>"}'
         )
-        try:
-            faith_score, _ = _measure_with_retry(faith_metric, test_case)
-            scores["faithfulness"] = faith_score if faith_score is not None else "ERR"
-        except Exception as exc:
-            logger.warning("FaithfulnessMetric lỗi sau retry: %s", exc)
-    else:
-        scores["faithfulness"] = "N/A"
+        faith_score, _ = _score_with_gemini(faith_prompt, judge)
+        scores["faithfulness"] = faith_score if faith_score >= 0 else "ERR"
 
-    # pass: dựa vào primary metric; ERROR chỉ khi metric sập hẳn
-    if primary_error:
-        scores["pass"] = "ERROR"
-    else:
-        scores["pass"] = "TRUE" if primary_passed else "FALSE"
+    scores["pass"] = "ERROR" if primary_error else ("TRUE" if primary_passed else "FALSE")
     return scores
 
 

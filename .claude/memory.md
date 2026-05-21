@@ -36,7 +36,7 @@
 - [x] 1.5 Chạy evaluation 30 câu hỏi → kết quả 0/30 PASS (xem `.claude/plan-fix-chatbot.md`)
 
 ### Phase 1.5 — Sửa lỗi sau Evaluation (xem `.claude/plan-fix-chatbot.md`)
-- [x] Fix 1: Sửa DeepEval metric — chuyển sang `evaluation_steps`, đổi tên cột → `correctness` (2026-05-21)
+- [x] Fix 1: Thay GEval bằng custom Gemini evaluator (bypass GEval bug non-OpenAI), thêm retry vào bot — Pass rate 70% ✅ (2026-05-21)
 - [x] Fix 2: Thêm 5 notes vào vault `D:\chatbot\` (dữ liệu từ dienmaythienphu.vn 2026-05-20)
   - [x] `Dieu-hoa-tong-quan.md`
   - [x] `Chinh-sach-van-chuyen-lap-dat.md`

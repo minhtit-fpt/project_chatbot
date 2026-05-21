@@ -1,13 +1,17 @@
+import asyncio
 import time
 from google import genai
 from google.genai import types
 import config
 from rag.retriever import Retriever
 from rag.prompt_builder import SYSTEM_PROMPT, build_prompt
+from rag.retry import call_with_retry
 
 _client = genai.Client(api_key=config.GEMINI_API_KEY)
 _retriever: Retriever | None = None
 
+
+# ── Sync API (dùng bởi api/main.py) ─────────────────────────────────────────
 
 def get_retriever() -> Retriever:
     global _retriever
@@ -22,12 +26,16 @@ def answer(question: str) -> dict:
     context_docs = retriever.search(question)
 
     messages = build_prompt(question, context_docs)
-    response = _client.models.generate_content(
-        model=config.CHAT_MODEL,
-        contents=messages,
-        config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT),
-    )
-    answer_text = response.text
+
+    def _call() -> str:
+        resp = _client.models.generate_content(
+            model=config.CHAT_MODEL,
+            contents=messages,
+            config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT),
+        )
+        return resp.text
+
+    answer_text = call_with_retry(_call, max_retries=4, base_wait=2.0)
 
     latency_ms = int((time.time() - t0) * 1000)
     sources = [
@@ -35,3 +43,20 @@ def answer(question: str) -> dict:
         for d in context_docs
     ]
     return {"answer": answer_text, "sources": sources, "latency_ms": latency_ms}
+
+
+# ── Async API (dùng bởi eval/run_deepeval.py) ────────────────────────────────
+
+async def _get_retriever() -> Retriever:
+    """Async wrapper — load index lần đầu trong thread pool để không block event loop."""
+    return await asyncio.to_thread(get_retriever)
+
+
+async def init_retriever() -> None:
+    """Pre-warm retriever vào RAM trước khi chạy eval."""
+    await _get_retriever()
+
+
+async def answer_async(question: str) -> dict:
+    """Async wrapper của answer() — chạy sync call trong thread pool."""
+    return await asyncio.to_thread(answer, question)

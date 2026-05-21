@@ -16,7 +16,7 @@
 - [x] 1.a Bỏ qua verbose debug — code đã đủ rõ để phân tích trực tiếp
 - [x] 1.b Chuyển từ `criteria` sang `evaluation_steps` (cách DeepEval recommend cho non-OpenAI models) — 2026-05-21
 - [x] 1.c Đổi tên cột sheet `answer_relevancy` → `correctness` cho đúng bản chất — 2026-05-21
-- [ ] 1.d Chạy lại toàn bộ 30 câu với `--force`, xác nhận score hợp lý (≥ 0.5 cho câu đúng)
+- [x] 1.d Chạy lại toàn bộ 30 câu với `--force` — **Pass rate: 70.0% (21/30)** ✅ — 2026-05-21
 
 **File cần sửa**: `eval/run_deepeval.py`
 
