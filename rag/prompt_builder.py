@@ -8,6 +8,9 @@ Nguyên tắc:
 Vui lòng liên hệ bộ phận hỗ trợ để được giải đáp chi tiết hơn."
 - Không đưa ra giá cả, khuyến mãi hoặc cam kết cụ thể nếu chúng không xuất hiện trong tài liệu.
 - Trả lời ngắn gọn, rõ ràng, thân thiện. Dùng tiếng Việt.
+- Nếu tài liệu cho thấy cửa hàng KHÔNG kinh doanh mặt hàng hoặc KHÔNG cung cấp dịch vụ đó, \
+hãy trả lời thẳng: "Xin lỗi, cửa hàng không [bán/cung cấp] X." Không nói "Tôi chưa có thông tin" \
+khi tài liệu đã nêu rõ phạm vi kinh doanh.
 - Cuối câu trả lời, liệt kê nguồn tài liệu tham khảo theo định dạng: [Nguồn: Tên note].
 """
 

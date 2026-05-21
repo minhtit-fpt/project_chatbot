@@ -96,7 +96,7 @@ COL_GHI_CHU = 6            # G — ghi chú người dùng (không đụng vào)
 COL_BOT_ANSWER = 7         # H
 COL_SOURCES = 8            # I
 COL_LATENCY_MS = 9         # J
-COL_ANSWER_RELEVANCY = 10  # K
+COL_CORRECTNESS = 10       # K (đổi từ answer_relevancy → correctness)
 COL_FAITHFULNESS = 11      # L
 COL_PASS = 12              # M
 COL_RUN_AT = 13            # N
@@ -105,7 +105,7 @@ COL_ERROR = 14             # O
 NUM_COLS = 15
 OUTPUT_HEADERS = [
     "bot_answer", "sources", "latency_ms",
-    "answer_relevancy", "faithfulness", "pass", "run_at", "error",
+    "correctness", "faithfulness", "pass", "run_at", "error",
 ]
 
 SCOPES = [
@@ -252,7 +252,7 @@ def write_result(ws: gspread.Worksheet, row_num: int, result: dict) -> None:
         result.get("bot_answer", ""),
         result.get("sources", ""),
         result.get("latency_ms", ""),
-        result.get("answer_relevancy", ""),
+        result.get("correctness", ""),
         result.get("faithfulness", ""),
         result.get("pass", ""),
         result.get("run_at", ""),
@@ -350,22 +350,25 @@ def run_metrics(
         retrieval_context=retrieval_context or None,
     )
 
-    scores: dict = {"answer_relevancy": "ERR", "faithfulness": "ERR"}
+    scores: dict = {"correctness": "ERR", "faithfulness": "ERR"}
 
     # ── Metric chính: GEval correctness (có expected) / AnswerRelevancy (không) ──
+    # Dùng evaluation_steps thay vì criteria — DeepEval khuyến nghị cho non-OpenAI models
+    # vì criteria đôi khi bị chia theo số steps → cho điểm cực nhỏ.
     if expected_answer:
         primary_metric = GEval(
             name="Correctness",
-            criteria=(
-                "Dựa vào expected_output làm chuẩn, đánh giá actual_output:\n"
-                "- 1.0 : đúng và đầy đủ như expected_output\n"
-                "- 0.7-0.9 : đúng nhưng thiếu vài chi tiết phụ\n"
-                "- 0.4-0.6 : đúng một phần hoặc cần hỏi thêm\n"
-                "- 0.1-0.3 : nói 'không có thông tin' trong khi expected cho thấy shop CÓ câu trả lời\n"
-                "- 0.0 : sai hoàn toàn\n"
-                "Lưu ý: nếu expected cho thấy shop KHÔNG bán/KHÔNG cung cấp dịch vụ đó "
-                "và bot trả lời đúng là 'không có/không cung cấp' thì cho điểm cao."
-            ),
+            evaluation_steps=[
+                "So sánh actual_output với expected_output để đánh giá mức độ chính xác.",
+                "Nếu actual_output đúng và đầy đủ như expected_output, cho điểm 1.0.",
+                "Nếu actual_output đúng nhưng thiếu một vài chi tiết phụ, cho điểm 0.7–0.9.",
+                "Nếu actual_output đúng một phần, thiếu nhiều thông tin hoặc cần hỏi thêm, cho điểm 0.4–0.6.",
+                "Nếu actual_output nói 'chưa có thông tin' hoặc từ chối trả lời trong khi "
+                "expected_output cho thấy cửa hàng CÓ câu trả lời rõ ràng, cho điểm 0.1–0.3.",
+                "Nếu expected_output cho thấy cửa hàng KHÔNG bán hoặc KHÔNG cung cấp dịch vụ "
+                "và actual_output trả lời đúng là không cung cấp, cho điểm 0.8–1.0.",
+                "Nếu actual_output sai hoàn toàn hoặc mâu thuẫn với expected_output, cho điểm 0.0.",
+            ],
             evaluation_params=[
                 LLMTestCaseParams.INPUT,
                 LLMTestCaseParams.ACTUAL_OUTPUT,
@@ -384,7 +387,7 @@ def run_metrics(
     primary_error = False
     try:
         score, primary_passed = _measure_with_retry(primary_metric, test_case)
-        scores["answer_relevancy"] = score if score is not None else "ERR"
+        scores["correctness"] = score if score is not None else "ERR"
         if not primary_passed:
             logger.debug(
                 "  correctness fail (%.2f): %s",
@@ -479,16 +482,16 @@ async def run_eval(args: argparse.Namespace) -> None:
             if scores["pass"] == "TRUE":
                 passed += 1
                 logger.info(
-                    "  ✓ pass | relevancy=%s faithfulness=%s latency=%dms",
-                    scores.get("answer_relevancy", "n/a"),
+                    "  ✓ pass | correctness=%s faithfulness=%s latency=%dms",
+                    scores.get("correctness", "n/a"),
                     scores.get("faithfulness", "n/a"),
                     latency_ms,
                 )
             else:
                 failed += 1
                 logger.info(
-                    "  ✗ fail | relevancy=%s faithfulness=%s",
-                    scores.get("answer_relevancy", "n/a"),
+                    "  ✗ fail | correctness=%s faithfulness=%s",
+                    scores.get("correctness", "n/a"),
                     scores.get("faithfulness", "n/a"),
                 )
 

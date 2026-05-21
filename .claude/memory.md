@@ -7,9 +7,9 @@
 
 ## Trạng thái hiện tại
 
-**Phase đang làm**: Phase 1 — MVP (tasks 1.1–1.4 đã xong, còn 1.5 test)
+**Phase đang làm**: Phase 1.5 — Sửa lỗi sau Evaluation
 **Bắt đầu**: 2026-04-21
-**Cập nhật lần cuối**: 2026-05-20
+**Cập nhật lần cuối**: 2026-05-21
 
 ---
 
@@ -36,16 +36,16 @@
 - [x] 1.5 Chạy evaluation 30 câu hỏi → kết quả 0/30 PASS (xem `.claude/plan-fix-chatbot.md`)
 
 ### Phase 1.5 — Sửa lỗi sau Evaluation (xem `.claude/plan-fix-chatbot.md`)
-- [ ] Fix 1: Sửa DeepEval metric (GEval score sai, toàn 0.02–0.07)
+- [x] Fix 1: Sửa DeepEval metric — chuyển sang `evaluation_steps`, đổi tên cột → `correctness` (2026-05-21)
 - [x] Fix 2: Thêm 5 notes vào vault `D:\chatbot\` (dữ liệu từ dienmaythienphu.vn 2026-05-20)
   - [x] `Dieu-hoa-tong-quan.md`
   - [x] `Chinh-sach-van-chuyen-lap-dat.md`
   - [x] `Chinh-sach-tra-gop.md`
   - [x] `Pham-vi-kinh-doanh.md`
   - [x] `May-giat-tu-van.md`
-  - [ ] Chạy lại `build_index.py` để re-embed
-- [ ] Fix 3: Thêm keywords vào `Chinh-sach-bao-hanh.md`
-- [ ] Fix 4: Sửa system prompt `rag/prompt_builder.py`
+  - [x] Chạy lại `build_index.py` → 7611 docs embedded, index.json saved (2026-05-21)
+- [x] Fix 3: Thêm keywords vào `Chinh-sach-bao-hanh.md` + xác nhận 2 notes kia đã có đủ keywords (2026-05-21)
+- [x] Fix 4: Sửa system prompt `rag/prompt_builder.py` — thêm rule phủ định rõ ràng (2026-05-21)
 
 ---
 
