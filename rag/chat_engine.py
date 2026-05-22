@@ -6,6 +6,7 @@ import config
 from rag.retriever import Retriever
 from rag.prompt_builder import SYSTEM_PROMPT, build_prompt
 from rag.retry import call_with_retry
+from logs.mysql_logger import log_conversation
 
 _client = genai.Client(api_key=config.GEMINI_API_KEY)
 _retriever: Retriever | None = None
@@ -42,6 +43,7 @@ def answer(question: str) -> dict:
         {"title": d["title"], "path": d["path"], "score": round(d["score"], 4)}
         for d in context_docs
     ]
+    log_conversation(question, answer_text, sources, latency_ms)
     return {"answer": answer_text, "sources": sources, "latency_ms": latency_ms}
 
 

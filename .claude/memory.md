@@ -28,6 +28,12 @@
 
 ## Đang làm
 
+### Phase 2 — Production-ready (branch: feat/phase2-production)
+- [x] 2.1 Citations — system prompt + `sources` field đã có từ Phase 1 ✅
+- [x] 2.2 Logging MySQL — `logs/mysql_logger.py`, tích hợp vào `chat_engine.py` + `api/main.py` (2026-05-22)
+- [x] 2.3 System prompt & Persona — refine tone thương hiệu Điện Máy Thiên Phú (2026-05-22)
+- [x] 2.4 Re-index tự động — `indexer/watcher.py` + `load_single_file()` trong `obsidian_loader.py` (2026-05-22)
+
 ### Phase 1 — MVP
 - [x] 1.1 Setup môi trường: `requirements.txt`, `.env.example`, `config.py`
 - [x] 1.2 Indexer: `obsidian_loader.py`, `embedder.py`, `build_index.py`
@@ -56,8 +62,6 @@
 
 ## Chưa bắt đầu
 
-- Phase 1 — MVP
-- Phase 2 — Production-ready
 - Phase 3 — Tối ưu
 - Phase 4 — Fine-tune
 

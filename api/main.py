@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from rag.chat_engine import answer, get_retriever
+from logs.mysql_logger import ensure_table
 
 app = FastAPI(title="FAQ Chatbot API", version="1.0.0")
 
@@ -33,6 +34,7 @@ class ChatResponse(BaseModel):
 @app.on_event("startup")
 async def startup_event() -> None:
     get_retriever()
+    ensure_table()
 
 
 @app.get("/health")
