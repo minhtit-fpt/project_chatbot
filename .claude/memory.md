@@ -7,9 +7,9 @@
 
 ## Trạng thái hiện tại
 
-**Phase đang làm**: Phase 1.5 — Sửa lỗi sau Evaluation
+**Phase đang làm**: Phase 2 — Production-ready
 **Bắt đầu**: 2026-04-21
-**Cập nhật lần cuối**: 2026-05-21
+**Cập nhật lần cuối**: 2026-05-22
 
 ---
 
@@ -46,6 +46,11 @@
   - [x] Chạy lại `build_index.py` → 7611 docs embedded, index.json saved (2026-05-21)
 - [x] Fix 3: Thêm keywords vào `Chinh-sach-bao-hanh.md` + xác nhận 2 notes kia đã có đủ keywords (2026-05-21)
 - [x] Fix 4: Sửa system prompt `rag/prompt_builder.py` — thêm rule phủ định rõ ràng (2026-05-21)
+- [x] Fix 5: Retrieval improvement — policy boost + metadata keywords + always include policy notes in candidate pool (2026-05-22)
+- [x] Fix 6: Tăng content limit từ 1500 → 3000 chars trong prompt_builder.py (2026-05-22)
+- [x] Fix 7: Tạo `Chinh-sach-gia.md` (mặc cả, khuyến mãi) + update `Dieu-hoa-tong-quan.md` (tặng kèm) (2026-05-22)
+- [x] Chạy lại eval → **Pass rate: 96.7% (29/30)** ✅ (2026-05-22)
+  - Câu fail duy nhất: [7] "Tivi 55 inch giá bao nhiêu?" (correctness=0.4) — edge case giá sản phẩm cụ thể
 
 ---
 

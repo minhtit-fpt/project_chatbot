@@ -21,7 +21,7 @@ def build_prompt(question: str, context_docs: list[dict]) -> str:
         context_parts = []
         for i, doc in enumerate(context_docs, 1):
             context_parts.append(
-                f"--- Tài liệu {i}: {doc['title']} ---\n{doc['content'][:1500]}"
+                f"--- Tài liệu {i}: {doc['title']} ---\n{doc['content'][:3000]}"
             )
         context_block = "\n\n".join(context_parts)
         return f"Tài liệu tham khảo:\n\n{context_block}\n\nCâu hỏi của khách hàng: {question}"
