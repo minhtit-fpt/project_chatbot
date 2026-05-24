@@ -7,9 +7,9 @@
 
 ## Trạng thái hiện tại
 
-**Phase đang làm**: Phase 2 — Production-ready
+**Phase đang làm**: Phase 3 — Tối ưu
 **Bắt đầu**: 2026-04-21
-**Cập nhật lần cuối**: 2026-05-22
+**Cập nhật lần cuối**: 2026-05-24
 
 ---
 
@@ -24,15 +24,26 @@
 - [x] Tạo `.claude/memory.md` (file này)
 - [x] Tạo cấu trúc thư mục dự án
 
+### Phase 2 — Production-ready ✅ (branch: feat/phase2-production, 2026-05-24)
+- [x] 2.1 Citations — system prompt + `sources` field đã có từ Phase 1
+- [x] 2.2 Logging MySQL — kiến trúc 2 tầng: chatbot → JSONL local → auto-sync → MySQL
+  - `logs/conversation_store.py`: ghi JSONL, không cần MySQL credentials
+  - `logs/sync_to_mysql.py`: sync worker có MySQL credentials
+  - `logs/auto_sync.py`: debounce timer per session (180s idle → trigger sync)
+  - Session tracking: `session_id` UUID theo từng cuộc trò chuyện
+- [x] 2.3 System prompt & Persona — refine tone thương hiệu Điện Máy Thiên Phú
+- [x] 2.4 Re-index tự động — `indexer/watcher.py` watchdog theo dõi vault, chỉ re-embed note thay đổi
+
 ---
 
 ## Đang làm
 
-### Phase 2 — Production-ready (branch: feat/phase2-production)
-- [x] 2.1 Citations — system prompt + `sources` field đã có từ Phase 1 ✅
-- [x] 2.2 Logging MySQL — `logs/mysql_logger.py`, tích hợp vào `chat_engine.py` + `api/main.py` (2026-05-22)
-- [x] 2.3 System prompt & Persona — refine tone thương hiệu Điện Máy Thiên Phú (2026-05-22)
-- [x] 2.4 Re-index tự động — `indexer/watcher.py` + `load_single_file()` trong `obsidian_loader.py` (2026-05-22)
+### Phase 3 — Tối ưu
+- [ ] 3.1 Phân tích log
+- [ ] 3.2 Cải thiện vault
+- [ ] 3.3 Hybrid search (nếu cần)
+- [ ] 3.4 Routing LLM (nếu cần)
+- [ ] 3.5 Re-ranker (nếu cần)
 
 ### Phase 1 — MVP
 - [x] 1.1 Setup môi trường: `requirements.txt`, `.env.example`, `config.py`
@@ -62,7 +73,6 @@
 
 ## Chưa bắt đầu
 
-- Phase 3 — Tối ưu
 - Phase 4 — Fine-tune
 
 ---
@@ -70,6 +80,7 @@
 ## Ghi chú / Quyết định trong quá trình làm
 
 - **2026-04-21**: Deployment là Ubuntu server headless → Obsidian không chạy được trực tiếp trên server. Quyết định dùng **Syncthing** để sync vault từ máy cá nhân lên server real-time. Server set Receive Only, chỉ đọc file `.md`. Thêm Phase 0 vào plan trước Phase 1.
+- **2026-05-24**: Logging dùng kiến trúc 2 tầng thay vì ghi thẳng MySQL. Chatbot chỉ ghi file JSONL local (không cần DB credentials). Background debounce timer (180s/session) tự động sync lên MySQL. MySQL chạy port 3307 (không phải 3306 mặc định).
 
 ---
 

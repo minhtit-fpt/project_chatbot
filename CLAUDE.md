@@ -43,7 +43,7 @@ Top 5 notes → Gemini 2.5 Flash → Trả lời + citations
 | Vector store | file `index.json` (in-memory cosine similarity) |
 | Data source | Obsidian Vault (>1000 notes, local) |
 | Deployment | Local — máy công ty |
-| Logging | SQLite (`logs/conversations.db`) |
+| Logging | MySQL (`chatbot_logs.conversations`, port 3307) |
 
 ---
 
@@ -74,7 +74,12 @@ project_chatbot/
 ├── data/
 │   └── index.json              # Vector index (gitignore)
 └── logs/
-    └── conversations.db        # SQLite log Q&A (gitignore)
+    ├── __init__.py
+    ├── conversation_store.py   # Ghi Q&A vào JSONL local (không cần MySQL)
+    ├── auto_sync.py            # Debounce timer per session → trigger sync
+    ├── sync_to_mysql.py        # Sync JSONL → MySQL (chỉ module này cần DB credentials)
+    ├── mysql_logger.py         # MySQL connection helper (dùng bởi sync_to_mysql)
+    └── conversations.jsonl     # Buffer local Q&A (gitignore)
 ```
 
 ---
@@ -94,6 +99,13 @@ project_chatbot/
 - Mục tiêu tốc độ <5s/câu hỏi
 - Flash: nhanh, rẻ, đủ thông minh cho FAQ
 - Pro: chỉ dùng routing tự động khi câu hỏi phức tạp
+
+### Logging 2 tầng (Phase 2)
+- Chatbot ghi Q&A vào `logs/conversations.jsonl` (local, không cần MySQL credentials)
+- `auto_sync.py` debounce 180s per `session_id` → khi session idle → gọi `sync_to_mysql.py`
+- Chỉ `sync_to_mysql.py` cần MySQL credentials → giảm attack surface
+- MySQL chạy port **3307** (không phải 3306), database `chatbot_logs`
+- Mỗi cuộc trò chuyện có `session_id` UUID riêng — client giữ và gửi kèm mỗi request
 
 ### Fine-tune sẽ làm ở Phase 4 (chưa cần ngay)
 - Phase 4 chỉ kích hoạt khi đã có đủ log dữ liệu thật từ khách hàng
