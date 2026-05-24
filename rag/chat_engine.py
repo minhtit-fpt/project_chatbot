@@ -6,7 +6,8 @@ import config
 from rag.retriever import Retriever
 from rag.prompt_builder import SYSTEM_PROMPT, build_prompt
 from rag.retry import call_with_retry
-from logs.mysql_logger import log_conversation
+from logs.conversation_store import log_conversation
+from logs.auto_sync import notify_message
 
 _client = genai.Client(api_key=config.GEMINI_API_KEY)
 _retriever: Retriever | None = None
@@ -21,7 +22,7 @@ def get_retriever() -> Retriever:
     return _retriever
 
 
-def answer(question: str) -> dict:
+def answer(question: str, session_id: str) -> dict:
     t0 = time.time()
     retriever = get_retriever()
     context_docs = retriever.search(question)
@@ -43,8 +44,9 @@ def answer(question: str) -> dict:
         {"title": d["title"], "path": d["path"], "score": round(d["score"], 4)}
         for d in context_docs
     ]
-    log_conversation(question, answer_text, sources, latency_ms)
-    return {"answer": answer_text, "sources": sources, "latency_ms": latency_ms}
+    log_conversation(session_id, question, answer_text, sources, latency_ms)
+    notify_message(session_id)
+    return {"session_id": session_id, "answer": answer_text, "sources": sources, "latency_ms": latency_ms}
 
 
 # ── Async API (dùng bởi eval/run_deepeval.py) ────────────────────────────────

@@ -1,9 +1,10 @@
+import uuid
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from rag.chat_engine import answer, get_retriever
-from logs.mysql_logger import ensure_table
 
 app = FastAPI(title="FAQ Chatbot API", version="1.0.0")
 
@@ -17,6 +18,7 @@ app.add_middleware(
 
 class ChatRequest(BaseModel):
     question: str = Field(..., min_length=1, max_length=1000)
+    session_id: str | None = Field(default=None, description="Bỏ trống để tạo session mới")
 
 
 class Source(BaseModel):
@@ -26,6 +28,7 @@ class Source(BaseModel):
 
 
 class ChatResponse(BaseModel):
+    session_id: str
     answer: str
     sources: list[Source]
     latency_ms: int
@@ -34,7 +37,6 @@ class ChatResponse(BaseModel):
 @app.on_event("startup")
 async def startup_event() -> None:
     get_retriever()
-    ensure_table()
 
 
 @app.get("/health")
@@ -44,8 +46,9 @@ async def health() -> dict:
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest) -> ChatResponse:
+    session_id = request.session_id or str(uuid.uuid4())
     try:
-        result = answer(request.question)
+        result = answer(request.question, session_id)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=503, detail=str(exc))
     except Exception as exc:
