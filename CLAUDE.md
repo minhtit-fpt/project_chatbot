@@ -67,7 +67,8 @@ project_chatbot/
 │   ├── __init__.py
 │   ├── retriever.py            # Cosine similarity in-memory, top-k
 │   ├── prompt_builder.py       # System prompt + context builder
-│   └── chat_engine.py          # Orchestrator RAG pipeline
+│   ├── retry.py                # Exponential backoff + jitter cho Gemini API
+│   └── chat_engine.py          # Orchestrator RAG pipeline (async, TTL cache)
 ├── api/
 │   ├── __init__.py
 │   └── main.py                 # FastAPI app, endpoint /chat

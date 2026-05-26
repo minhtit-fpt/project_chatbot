@@ -1,7 +1,11 @@
 import asyncio
 import time
+import unicodedata
+from collections import OrderedDict
+
 from google import genai
 from google.genai import types
+
 import config
 from rag.retriever import Retriever
 from rag.prompt_builder import SYSTEM_PROMPT, build_prompt
@@ -11,14 +15,30 @@ from logs.auto_sync import notify_message
 
 _client = genai.Client(api_key=config.GEMINI_API_KEY)
 _retriever: Retriever | None = None
+_retriever_lock = asyncio.Lock()
 
+
+# ---------------------------------------------------------------------------
+# TTL cache đơn giản (thread-safe với GIL của CPython)
+# ---------------------------------------------------------------------------
+
+class _TTLCache:
+    """OrderedDict-based LRU cache với TTL."""
+
+    def __init__(self, max_size: int, ttl: float) -> None:
+        self._store: OrderedDict[str, tuple[dict, float]] = OrderedDict()
+        self._max_size = max_size
+        self._ttl = ttl
 
 # ── Sync API (dùng bởi api/main.py) ─────────────────────────────────────────
 
 def get_retriever() -> Retriever:
     global _retriever
-    if _retriever is None:
-        _retriever = Retriever()
+    if _retriever is not None:
+        return _retriever
+    async with _retriever_lock:
+        if _retriever is None:
+            _retriever = await asyncio.to_thread(Retriever)
     return _retriever
 
 
