@@ -91,7 +91,7 @@ def update_index() -> None:
         })
 
     all_records = unchanged + updated
-    config.INDEX_PATH.write_text(json.dumps(all_records, ensure_ascii=False), encoding="utf-8")
+    config.INDEX_PATH.write_text(json.dumps(all_records, ensure_ascii=False, cls=_DateEncoder), encoding="utf-8")
     print(f"[build_index] Index updated: {len(updated)} changed, {len(unchanged)} unchanged")
 
 

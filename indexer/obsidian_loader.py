@@ -95,3 +95,42 @@ def load_vault(vault_path: Path) -> list[dict]:
         })
 
     return docs
+
+
+def load_single_file(file_path: Path) -> dict | None:
+    """Load và xử lý một file .md duy nhất — dùng cho watcher re-index.
+
+    Returns None nếu file bị exclude hoặc rỗng.
+    path trong record là đường dẫn tuyệt đối (string) vì watcher không biết vault root.
+    """
+    if _should_exclude(file_path):
+        return None
+
+    try:
+        raw = file_path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+    if not raw.strip():
+        return None
+
+    meta, body = _parse_frontmatter(raw)
+
+    # Expand embeds nếu biết vault root (dùng config)
+    body = _expand_embeds(body, config.OBSIDIAN_VAULT_PATH)
+
+    title = meta.get("title") or file_path.stem
+    keywords = meta.get("keywords", [])
+    if isinstance(keywords, list):
+        keyword_str = " ".join(str(k) for k in keywords)
+    else:
+        keyword_str = str(keywords)
+
+    content = f"{title}\n{keyword_str}\n{body}".strip()
+
+    return {
+        "path": str(file_path),
+        "title": title,
+        "content": content,
+        "metadata": meta,
+    }
