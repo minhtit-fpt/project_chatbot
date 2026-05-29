@@ -57,7 +57,78 @@ project_chatbot/
 
 ## Cài đặt
 
-### 1. Clone và tạo môi trường
+Có 2 cách cài đặt: **Docker** (khuyến nghị cho production) hoặc **thủ công** (phát triển local).
+
+---
+
+### Cách 1 — Docker (khuyến nghị)
+
+Yêu cầu: [Docker Desktop](https://www.docker.com/products/docker-desktop/) đã cài và đang chạy.
+
+#### 1. Clone và tạo file `.env`
+
+```bash
+git clone <repo-url>
+cd project_chatbot
+cp .env.example .env
+```
+
+Điền các giá trị vào `.env`:
+
+```env
+GEMINI_API_KEY=your_gemini_api_key_here
+OBSIDIAN_VAULT_PATH=C:\path\to\your\obsidian\vault   # đường dẫn trên máy host
+
+MYSQL_USER=chatbot
+MYSQL_PASSWORD=your_password_here
+MYSQL_DATABASE=chatbot_logs
+MYSQL_ROOT_PASSWORD=your_root_password_here
+```
+
+> - `OBSIDIAN_VAULT_PATH` là đường dẫn trên máy host — Docker tự mount vào container.
+> - `MYSQL_HOST` và `MYSQL_PORT` **không cần điền** — Docker override tự động.
+> - Lấy Gemini API key tại [Google AI Studio](https://aistudio.google.com/apikey).
+
+#### 2. Build và khởi động
+
+```bash
+docker compose up -d
+```
+
+Lần đầu sẽ mất vài phút để pull image và build. Các lần sau khởi động gần như tức thì.
+
+#### 3. Build index lần đầu
+
+```bash
+docker compose exec chatbot python -m indexer.build_index
+```
+
+> Chỉ cần chạy lần đầu. Sau đó dùng watcher (xem phần [Rebuild index tự động](#rebuild-index-tự-động)).
+
+#### 4. Kiểm tra
+
+```bash
+docker compose ps          # kiểm tra trạng thái services
+docker compose logs -f     # xem logs real-time
+```
+
+Server sẵn sàng tại `http://localhost:8000`.
+
+#### Các lệnh Docker thường dùng
+
+```bash
+docker compose stop                               # dừng (giữ data)
+docker compose down                               # dừng và xoá containers
+docker compose down -v                            # dừng và xoá cả volumes (reset DB)
+docker compose restart chatbot                    # restart chỉ app
+docker compose exec chatbot python -m logs.sync_to_mysql --dry-run
+```
+
+---
+
+### Cách 2 — Cài đặt thủ công
+
+#### 1. Clone và tạo môi trường
 
 ```bash
 git clone <repo-url>
@@ -68,7 +139,7 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-### 2. Tạo file `.env`
+#### 2. Tạo file `.env`
 
 ```bash
 cp .env.example .env
@@ -82,7 +153,7 @@ OBSIDIAN_VAULT_PATH=C:\path\to\your\vault
 
 # MySQL logging (tuỳ chọn — bỏ trống nếu chưa có DB)
 MYSQL_HOST=127.0.0.1
-MYSQL_PORT=3306
+MYSQL_PORT=3307
 MYSQL_USER=chatbot
 MYSQL_PASSWORD=your_password_here
 MYSQL_DATABASE=chatbot_logs
@@ -90,7 +161,7 @@ MYSQL_DATABASE=chatbot_logs
 
 > Lấy Gemini API key tại [Google AI Studio](https://aistudio.google.com/apikey).
 
-### 3. Build index
+#### 3. Build index
 
 Chạy lần đầu (và mỗi khi vault thay đổi nhiều):
 
@@ -100,7 +171,7 @@ python -m indexer.build_index
 
 Index được lưu vào `data/index.json`. Thời gian build phụ thuộc số notes và quota API.
 
-### 4. Khởi động server
+#### 4. Khởi động server
 
 ```bash
 uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
@@ -145,7 +216,9 @@ Server sẵn sàng tại `http://localhost:8000`.
 http://localhost:8000/docs
 ```
 
-## Setup MySQL
+## Setup MySQL (chỉ cho Cách 2 — thủ công)
+
+> Nếu dùng Docker, MySQL đã được khởi động tự động — bỏ qua phần này.
 
 MySQL là tuỳ chọn — chatbot vẫn chạy bình thường nếu không có DB (log chỉ lưu local JSONL).
 
@@ -301,7 +374,13 @@ Watcher theo dõi thư mục vault và tự rebuild index khi phát hiện file 
 
 ## Yêu cầu hệ thống
 
+**Docker (Cách 1):**
+- Docker Desktop 4.0+
+- Gemini API key
+- RAM: ~700MB (app + MySQL containers)
+
+**Thủ công (Cách 2):**
 - Python 3.11+
-- MySQL 8.0+ (port 3307, tuỳ chọn — chỉ cần nếu muốn log DB)
-- Gemini API key (có quota free tier)
+- MySQL 8.0+ (port 3307, tuỳ chọn)
+- Gemini API key
 - RAM: ~500MB (index 1000 notes)
