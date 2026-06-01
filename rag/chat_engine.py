@@ -81,13 +81,20 @@ def answer(question: str, session_id: str) -> dict:
     answer_text = call_with_retry(_call, max_retries=4, base_wait=2.0)
 
     latency_ms = int((time.time() - t0) * 1000)
+    message_id = str(uuid.uuid4())
     sources = [
         {"title": d["title"], "path": d["path"], "score": round(d["score"], 4)}
         for d in context_docs
     ]
-    log_conversation(session_id, question, answer_text, sources, latency_ms)
+    log_conversation(session_id, question, answer_text, sources, latency_ms, message_id)
     notify_message(session_id)
-    return {"session_id": session_id, "answer": answer_text, "sources": sources, "latency_ms": latency_ms}
+    return {
+        "message_id": message_id,
+        "session_id": session_id,
+        "answer": answer_text,
+        "sources": sources,
+        "latency_ms": latency_ms,
+    }
 
 
 # ── Async API (dùng bởi eval/run_deepeval.py) ────────────────────────────────
