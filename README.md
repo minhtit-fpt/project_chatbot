@@ -100,7 +100,7 @@ Lần đầu sẽ mất vài phút để pull image và build. Các lần sau kh
 #### 3. Build index lần đầu
 
 ```bash
-docker compose exec chatbot python -m indexer.build_index
+docker compose exec -e PYTHONPATH=/app chatbot python indexer/build_index.py
 ```
 
 > Chỉ cần chạy lần đầu. Sau đó dùng watcher (xem phần [Rebuild index tự động](#rebuild-index-tự-động)).
