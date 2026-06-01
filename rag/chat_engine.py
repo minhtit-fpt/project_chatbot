@@ -1,5 +1,7 @@
 import asyncio
+import threading
 import time
+import uuid
 import unicodedata
 from collections import OrderedDict
 
@@ -15,7 +17,7 @@ from logs.auto_sync import notify_message
 
 _client = genai.Client(api_key=config.GEMINI_API_KEY)
 _retriever: Retriever | None = None
-_retriever_lock = asyncio.Lock()
+_retriever_lock = threading.Lock()  # sync lock — get_retriever() là hàm đồng bộ
 
 
 # ---------------------------------------------------------------------------
@@ -30,15 +32,34 @@ class _TTLCache:
         self._max_size = max_size
         self._ttl = ttl
 
+    def get(self, key: str) -> dict | None:
+        entry = self._store.get(key)
+        if entry is None:
+            return None
+        value, ts = entry
+        if time.time() - ts > self._ttl:
+            del self._store[key]
+            return None
+        self._store.move_to_end(key)
+        return value
+
+    def set(self, key: str, value: dict) -> None:
+        if key in self._store:
+            self._store.move_to_end(key)
+        self._store[key] = (value, time.time())
+        while len(self._store) > self._max_size:
+            self._store.popitem(last=False)
+
+
 # ── Sync API (dùng bởi api/main.py) ─────────────────────────────────────────
 
 def get_retriever() -> Retriever:
     global _retriever
     if _retriever is not None:
         return _retriever
-    async with _retriever_lock:
+    with _retriever_lock:
         if _retriever is None:
-            _retriever = await asyncio.to_thread(Retriever)
+            _retriever = Retriever()
     return _retriever
 
 
@@ -81,6 +102,7 @@ async def init_retriever() -> None:
     await _get_retriever()
 
 
-async def answer_async(question: str) -> dict:
+async def answer_async(question: str, session_id: str | None = None) -> dict:
     """Async wrapper của answer() — chạy sync call trong thread pool."""
-    return await asyncio.to_thread(answer, question)
+    sid = session_id or str(uuid.uuid4())
+    return await asyncio.to_thread(answer, question, sid)
