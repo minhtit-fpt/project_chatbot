@@ -1,22 +1,20 @@
 services:
   chatbot:
-    build: .
+    image: minhtit/project_chatbot:latest
     ports:
       - "8000:8000"
     env_file:
       - .env
     environment:
-      MYSQL_HOST: mysql
+      MYSQL_HOST: host.docker.internal
       MYSQL_PORT: 3306
-      # Override vault path — inside container vault is mounted at /vault
       OBSIDIAN_VAULT_PATH: /vault
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
-      - ${OBSIDIAN_VAULT_PATH}:/vault:ro
+      - /root/obsidian-vault:/vault:ro
       - ./data:/app/data
       - ./logs:/app/logs
-    depends_on:
-      mysql:
-        condition: service_healthy
     restart: unless-stopped
 
   mysql:
