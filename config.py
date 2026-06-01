@@ -16,6 +16,11 @@ CHAT_MODEL_CHAIN: list[str] = [m.strip() for m in _chain_raw.split(",") if m.str
 
 INDEX_PATH = Path(__file__).parent / "data" / "index.json"
 
+# CORS — comma-separated origins, e.g. "https://example.com,https://shop.example.com"
+# Dùng "*" cho môi trường dev/local. Production nên set cụ thể.
+_origins_raw = os.environ.get("ALLOWED_ORIGINS", "*")
+ALLOWED_ORIGINS: list[str] = [o.strip() for o in _origins_raw.split(",") if o.strip()]
+
 # MySQL logging
 MYSQL_HOST = os.environ.get("MYSQL_HOST", "localhost")
 MYSQL_PORT = int(os.environ.get("MYSQL_PORT", "3306"))

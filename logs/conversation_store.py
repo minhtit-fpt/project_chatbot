@@ -3,9 +3,14 @@
 Chatbot chỉ dùng module này, không cần biết MySQL tồn tại.
 File JSONL sẽ được sync lên MySQL bởi script riêng (logs/sync_to_mysql.py).
 
-Format mỗi dòng:
-    {"timestamp": "...", "question": "...", "answer": "...",
+Format mỗi dòng (type="message"):
+    {"type": "message", "message_id": "...", "session_id": "...",
+     "timestamp": "...", "question": "...", "answer": "...",
      "sources": [...], "latency_ms": 123, "synced": false}
+
+Format mỗi dòng (type="feedback"):
+    {"type": "feedback", "message_id": "...", "session_id": "...",
+     "timestamp": "...", "rating": "up"|"down", "comment": "...", "synced": false}
 """
 import json
 import logging
@@ -32,9 +37,12 @@ def log_conversation(
     answer: str,
     sources: list[Any],
     latency_ms: int,
+    message_id: str | None = None,
 ) -> None:
     """Ghi 1 bản ghi Q&A vào cuối file JSONL — thread-safe, non-blocking."""
     record = {
+        "type": "message",
+        "message_id": message_id or "",
         "session_id": session_id,
         "timestamp": datetime.now().isoformat(timespec="seconds"),
         "question": question,
@@ -52,6 +60,35 @@ def log_conversation(
                     f.write(json.dumps(record, ensure_ascii=False) + "\n")
         except Exception as exc:
             logger.warning("conversation_store write failed: %s", exc)
+
+    threading.Thread(target=_write, daemon=True).start()
+
+
+def log_feedback(
+    message_id: str,
+    session_id: str,
+    rating: str,
+    comment: str | None = None,
+) -> None:
+    """Ghi feedback (thumbs up/down) của user vào JSONL — thread-safe, non-blocking."""
+    record = {
+        "type": "feedback",
+        "message_id": message_id,
+        "session_id": session_id,
+        "timestamp": datetime.now().isoformat(timespec="seconds"),
+        "rating": rating,
+        "comment": comment or "",
+        "synced": False,
+    }
+
+    def _write() -> None:
+        try:
+            _ensure_dir()
+            with _write_lock:
+                with _STORE_PATH.open("a", encoding="utf-8") as f:
+                    f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        except Exception as exc:
+            logger.warning("conversation_store feedback write failed: %s", exc)
 
     threading.Thread(target=_write, daemon=True).start()
 
