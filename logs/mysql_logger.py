@@ -7,7 +7,6 @@ Lỗi kết nối sẽ được bắt và log cảnh báo — không làm sập 
 import json
 import logging
 import threading
-from datetime import datetime
 from typing import Any
 
 import mysql.connector
@@ -76,7 +75,7 @@ def _do_log(question: str, answer: str, sources: list[Any], latency_ms: int) -> 
         cursor.execute(
             _INSERT_SQL,
             (
-                datetime.now(),
+                config.now_local(),
                 question,
                 answer,
                 json.dumps(sources, ensure_ascii=False),
