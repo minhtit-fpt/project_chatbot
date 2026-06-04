@@ -41,19 +41,15 @@ class ChatRequest(BaseModel):
     )
 
 
-class Source(BaseModel):
-    title: str
-    path: str
-    score: float
-
-
 class ChatResponse(BaseModel):
     message_id: str = Field(..., description="ID duy nhất của tin nhắn này, dùng để gửi feedback")
     session_id: str = Field(..., description="Giữ lại và gửi kèm các request tiếp theo trong cùng session")
     answer: str
-    sources: list[Source]
     latency_ms: int
     cached: bool = False
+    # Lưu ý: `sources` (nguồn trích dẫn) CỐ TÌNH không nằm trong response.
+    # Nguồn vẫn được ghi vào log/DB qua log_conversation() trong rag/chat_engine.py,
+    # nhưng không trả về cho người dùng cuối.
 
 
 class SessionResponse(BaseModel):
@@ -122,6 +118,8 @@ async def chat(request: ChatRequest) -> ChatResponse:
     except Exception as exc:
         logger.exception("Lỗi không mong đợi: %s", exc)
         raise HTTPException(status_code=500, detail=f"Lỗi xử lý: {exc}")
+    # `result` vẫn chứa key "sources" (để logging/eval dùng), nhưng ChatResponse
+    # không khai báo field này nên Pydantic tự loại bỏ → client KHÔNG nhận sources.
     return ChatResponse(**result)
 
 
