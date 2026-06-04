@@ -15,7 +15,6 @@ Format mỗi dòng (type="feedback"):
 import json
 import logging
 import threading
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -44,7 +43,7 @@ def log_conversation(
         "type": "message",
         "message_id": message_id or "",
         "session_id": session_id,
-        "timestamp": datetime.now().isoformat(timespec="seconds"),
+        "timestamp": config.now_local().isoformat(timespec="seconds"),
         "question": question,
         "answer": answer,
         "sources": sources,
@@ -75,7 +74,7 @@ def log_feedback(
         "type": "feedback",
         "message_id": message_id,
         "session_id": session_id,
-        "timestamp": datetime.now().isoformat(timespec="seconds"),
+        "timestamp": config.now_local().isoformat(timespec="seconds"),
         "rating": rating,
         "comment": comment or "",
         "synced": False,

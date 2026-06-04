@@ -1,5 +1,8 @@
 import os
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -15,6 +18,21 @@ _chain_raw = os.environ.get("CHAT_MODEL_CHAIN", CHAT_MODEL)
 CHAT_MODEL_CHAIN: list[str] = [m.strip() for m in _chain_raw.split(",") if m.strip()]
 
 INDEX_PATH = Path(__file__).parent / "data" / "index.json"
+
+# Múi giờ ứng dụng — mặc định Việt Nam (UTC+7). Đổi qua biến môi trường APP_TIMEZONE.
+# Dùng ZoneInfo nên độc lập với timezone của container/host (container Docker mặc định UTC).
+# Cần gói `tzdata` trong requirements.txt để ZoneInfo chạy được trên image python slim.
+TIMEZONE = ZoneInfo(os.environ.get("APP_TIMEZONE", "Asia/Ho_Chi_Minh"))
+
+
+def now_local() -> datetime:
+    """Giờ hiện tại theo TIMEZONE, trả về naive datetime (wall-clock UTC+7).
+
+    Để naive cho khớp cột MySQL DATETIME (không lưu offset) và giữ nguyên format
+    timestamp trong JSONL — khác biệt duy nhất so với trước là giờ đã là UTC+7
+    thay vì UTC mặc định của container.
+    """
+    return datetime.now(TIMEZONE).replace(tzinfo=None)
 
 # CORS — comma-separated origins, e.g. "https://example.com,https://shop.example.com"
 # Dùng "*" cho môi trường dev/local. Production nên set cụ thể.
