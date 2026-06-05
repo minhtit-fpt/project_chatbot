@@ -301,7 +301,12 @@ async def call_http(question: str, api_url: str) -> tuple[str, list[dict], int, 
     # Dùng title làm proxy retrieval_context (kém chính xác hơn)
     retrieval_context = [s.get("title", "") for s in sources]
 
-    return data["answer"], sources, data.get("latency_ms", 0), retrieval_context
+    # /chat trả answer dạng mảng dòng — ghép lại thành chuỗi cho eval.
+    answer = data["answer"]
+    if isinstance(answer, list):
+        answer = "\n".join(answer)
+
+    return answer, sources, data.get("latency_ms", 0), retrieval_context
 
 
 # ── Custom Gemini Evaluator (bypass DeepEval GEval — bị bug với non-OpenAI models) ──
