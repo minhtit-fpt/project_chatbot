@@ -48,6 +48,7 @@ MYSQL_DATABASE = os.environ.get("MYSQL_DATABASE", "chatbot_logs")
 
 TOP_K = 5
 RETRIEVAL_CANDIDATE_K = 100  # retrieve rộng rồi re-rank với keyword + policy boost
+FEATURED_BOOST = 0.08  # cộng điểm cho note hãng nổi tiếng (frontmatter `featured: true`)
 EMBEDDING_BATCH_SIZE = 20
 
 # Retry / timeout cho Gemini API

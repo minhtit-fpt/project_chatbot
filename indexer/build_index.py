@@ -1,8 +1,10 @@
 """Build or incrementally update data/index.json from the Obsidian vault.
 
 Usage:
-    python -m indexer.build_index          # full rebuild
-    python -m indexer.build_index --update # only re-embed changed notes
+    python -m indexer.build_index                # full rebuild
+    python -m indexer.build_index --update       # only re-embed changed notes
+    python -m indexer.build_index --refresh-meta # chỉ cập nhật metadata frontmatter
+                                                 # (vd featured: true), KHÔNG re-embed
 """
 import datetime
 import json
@@ -95,8 +97,38 @@ def update_index() -> None:
     print(f"[build_index] Index updated: {len(updated)} changed, {len(unchanged)} unchanged")
 
 
+def refresh_metadata() -> None:
+    """Cập nhật field `metadata` trong index.json từ frontmatter hiện tại của vault.
+
+    KHÔNG re-embed — dùng khi chỉ đổi frontmatter (vd thêm `featured: true`).
+    `update_index()` không dùng được cho việc này vì nó so sánh `content` (title +
+    keywords + body), mà thêm `featured` không làm đổi content → bị coi là unchanged.
+    """
+    if not config.INDEX_PATH.exists():
+        print("[build_index] No existing index — run full build first")
+        return
+
+    records = json.loads(config.INDEX_PATH.read_text(encoding="utf-8"))
+    docs = load_vault(config.OBSIDIAN_VAULT_PATH)
+    meta_by_path = {doc["path"]: doc["metadata"] for doc in docs}
+
+    updated = 0
+    for rec in records:
+        new_meta = meta_by_path.get(rec["path"])
+        if new_meta is not None and new_meta != rec.get("metadata"):
+            rec["metadata"] = new_meta
+            updated += 1
+
+    config.INDEX_PATH.write_text(
+        json.dumps(records, ensure_ascii=False, cls=_DateEncoder), encoding="utf-8"
+    )
+    print(f"[build_index] Metadata refreshed: {updated}/{len(records)} records (no re-embed)")
+
+
 if __name__ == "__main__":
-    if "--update" in sys.argv:
+    if "--refresh-meta" in sys.argv:
+        refresh_metadata()
+    elif "--update" in sys.argv:
         update_index()
     else:
         build_full_index()

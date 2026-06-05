@@ -9,7 +9,7 @@
 
 **Phase đang làm**: Phase 3 — Tối ưu
 **Bắt đầu**: 2026-04-21
-**Cập nhật lần cuối**: 2026-05-24
+**Cập nhật lần cuối**: 2026-06-05
 
 ---
 
@@ -44,6 +44,7 @@
 - [ ] 3.3 Hybrid search (nếu cần)
 - [ ] 3.4 Routing LLM (nếu cần)
 - [ ] 3.5 Re-ranker (nếu cần)
+- [~] 3.6 Featured boost (Hướng A) — ĐÃ tag 3617 note + ĐÃ code (`_featured_boost`, `config.FEATURED_BOOST=0.08`, `build_index --refresh-meta`). **CÒN: chạy `--refresh-meta` + restart app** để index có `metadata.featured`. Xem Ghi chú 2026-06-05.
 
 ### Phase 1 — MVP
 - [x] 1.1 Setup môi trường: `requirements.txt`, `.env.example`, `config.py`
@@ -81,6 +82,14 @@
 
 - **2026-04-21**: Deployment là Ubuntu server headless → Obsidian không chạy được trực tiếp trên server. Quyết định dùng **Syncthing** để sync vault từ máy cá nhân lên server real-time. Server set Receive Only, chỉ đọc file `.md`. Thêm Phase 0 vào plan trước Phase 1.
 - **2026-05-24**: Logging dùng kiến trúc 2 tầng thay vì ghi thẳng MySQL. Chatbot chỉ ghi file JSONL local (không cần DB credentials). Background debounce timer (180s/session) tự động sync lên MySQL. MySQL chạy port 3307 (không phải 3306 mặc định).
+- **2026-06-05**: Câu hỏi chung chung (vd "có những dòng tivi nào") đang trả về model bình dân (Asanzo/UBC/Skyworth) thay vì hãng nổi tiếng, do retriever không có tín hiệu "độ nổi tiếng" trong ranking (chỉ có cosine + keyword_boost + policy_boost). **CHỐT Hướng A — Featured boost** (CHƯA code, làm sau):
+  1. **Vault**: thêm `featured: true` vào frontmatter các note hãng nổi tiếng (Samsung/LG/Sony...). `obsidian_loader.py` đã lưu nguyên frontmatter vào `metadata` (dòng 94) nên field này tới được retriever.
+  2. **`config.py`**: thêm hằng `FEATURED_BOOST = 0.08` (tunable).
+  3. **`rag/retriever.py`**: thêm `_featured_boost(rec)` trả `FEATURED_BOOST` nếu `rec.get("metadata", {}).get("featured")` truthy (y pattern `_policy_boost`); cộng vào `final_score`; và **LUÔN đưa note featured vào pool ứng viên** (giống đoạn always-include policy notes ~retriever.py:89-91) để boost kéo lên được kể cả khi cosine thấp.
+  4. **Rebuild index** sau khi gắn tag (để `metadata.featured` vào `index.json`).
+  - Lý do chọn A: data-driven, tái dùng pattern sẵn có, code nhỏ, áp dụng mọi câu hỏi rộng, boost nhỏ (~0.08) không đè câu hỏi cụ thể. Hướng B (note tổng hợp "Các dòng nổi bật" + keywords) để dành làm thêm sau nếu cần câu trả lời tổng quan đẹp.
+  - **Tiến độ 2026-06-05**: (a) DATA — đã gắn `featured: true` cho **3617 note** famous brands trong vault `D:\chatbot` (script tag KHÔNG giữ trong repo; map nổi tiếng lưu ngay dưới đây). Backup vault: `C:\Users\ham48\chatbot_backup_featured_2026-06-05.zip`. (b) CODE — `config.FEATURED_BOOST=0.08`, `_featured_boost()` trong `rag/retriever.py` (boost candidate trong pool, không force-add), chế độ `python -m indexer.build_index --refresh-meta` (cập nhật metadata, KHÔNG re-embed). **CÒN LẠI để chạy thật**: chạy `--refresh-meta` + restart app + sync vault lên server. Quy mô: famous ~48% kho → boost chủ yếu "dìm" hàng bình dân (Asanzo/UBC/Skyworth...) xuống.
+  - **Map hãng nổi tiếng (NGUỒN CHÂN LÝ — để re-tag sản phẩm mới; gắn `featured: true` vào frontmatter note có brand này trong tên file)**: tivi=samsung,lg,sony · dieu-hoa=daikin,panasonic,mitsubishi,lg,toshiba · tu-lanh=samsung,lg,panasonic,toshiba,hitachi · may-giat=lg,samsung,panasonic,toshiba,electrolux · dien-gia-dung=panasonic,philips,sharp,sunhouse,kangaroo · thiet-bi-nha-bep=bosch,hafele,electrolux,siemens · tu-dong=sanaky,alaska,kangaroo · tu-mat=sanaky,alaska,darling · may-loc-nuoc=kangaroo,karofi,mutosi · binh-nong-lanh=ariston,ferroli,panasonic · thiet-bi-am-thanh=sony,samsung,jbl,denon,yamaha · may-say-quan-ao=bosch,lg,electrolux,samsung · quat-dien=asia,senko,panasonic,sunhouse · may-rua-bat=bosch,texgio,eurosun · may-nuoc-nong=ariston,midea · thiet-bi-van-phong=canon,samsung,lg
 
 ---
 
