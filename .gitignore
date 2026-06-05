@@ -36,3 +36,4 @@ test_chat.py
 debug_retrieval.py
 check_api.py
 query
+logs/conversations.jsonl
