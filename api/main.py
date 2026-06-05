@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 import config
+from api.formatting import format_answer_lines
 from logs.conversation_store import log_feedback
 from rag.chat_engine import answer_async, init_retriever
 
@@ -44,7 +45,10 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     message_id: str = Field(..., description="ID duy nhất của tin nhắn này, dùng để gửi feedback")
     session_id: str = Field(..., description="Giữ lại và gửi kèm các request tiếp theo trong cùng session")
-    answer: str
+    answer: list[str] = Field(
+        ...,
+        description="Câu trả lời — mỗi phần tử là MỘT dòng đã làm sạch khoảng trắng. FE tự xuống dòng/style.",
+    )
     latency_ms: int
     cached: bool = False
     # Lưu ý: `sources` (nguồn trích dẫn) CỐ TÌNH không nằm trong response.
@@ -118,9 +122,11 @@ async def chat(request: ChatRequest) -> ChatResponse:
     except Exception as exc:
         logger.exception("Lỗi không mong đợi: %s", exc)
         raise HTTPException(status_code=500, detail=f"Lỗi xử lý: {exc}")
-    # `result` vẫn chứa key "sources" (để logging/eval dùng), nhưng ChatResponse
-    # không khai báo field này nên Pydantic tự loại bỏ → client KHÔNG nhận sources.
-    return ChatResponse(**result)
+    # answer (chuỗi nhiều dòng từ LLM) → mảng từng dòng đã làm sạch cho FE.
+    # Bản text đầy đủ vẫn được log ở DB (trong chat_engine.answer()).
+    # Tạo dict mới (không mutate `result`); key "sources" dư bị Pydantic bỏ qua.
+    payload = {**result, "answer": format_answer_lines(result["answer"])}
+    return ChatResponse(**payload)
 
 
 @app.post(
