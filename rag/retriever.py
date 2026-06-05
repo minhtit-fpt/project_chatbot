@@ -52,6 +52,18 @@ def _policy_boost(rec: dict) -> float:
     return 0.0
 
 
+def _featured_boost(rec: dict) -> float:
+    """Boost cho note hãng nổi tiếng (frontmatter `featured: true`).
+
+    Với câu hỏi chung chung ("có những dòng tivi nào"), mọi sản phẩm cùng loại có
+    cosine gần nhau nên hàng bình dân dễ lọt top. Boost này đẩy hãng nổi tiếng lên.
+    Tag `featured` được gắn sẵn trong frontmatter các note hãng nổi tiếng (xem .claude/memory.md).
+    """
+    if rec.get("metadata", {}).get("featured"):
+        return config.FEATURED_BOOST
+    return 0.0
+
+
 class Retriever:
     def __init__(self) -> None:
         self._records: list[dict] = []
@@ -93,7 +105,7 @@ class Retriever:
         candidates = []
         for idx in candidate_idx_set:
             rec = self._records[idx]
-            boost = _keyword_boost(question, rec) + _policy_boost(rec)
+            boost = _keyword_boost(question, rec) + _policy_boost(rec) + _featured_boost(rec)
             final_score = float(cosine_scores[idx]) + boost
             candidates.append((final_score, idx))
 
