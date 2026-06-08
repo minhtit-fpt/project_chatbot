@@ -90,23 +90,31 @@ def _read_pending() -> tuple[list[dict], list[int]]:
 
 
 def _mark_synced(indices: set[int]) -> None:
-    """Đánh dấu synced=true cho các dòng đã insert thành công."""
+    """Đánh dấu synced=true cho các dòng đã insert thành công.
+
+    Read-modify-write CẢ file → phải giữ chung lock với conversation_store,
+    nếu không dòng vừa append (từ chatbot thread khác) sẽ bị ghi đè mất.
+    Dòng mới append nằm cuối file, index ngoài `indices` nên vẫn được giữ nguyên.
+    """
     if not _STORE_PATH.exists():
         return
 
-    lines = _STORE_PATH.read_text(encoding="utf-8").splitlines(keepends=True)
-    for i, line in enumerate(lines):
-        if i in indices:
-            stripped = line.strip()
-            if stripped:
-                try:
-                    rec = json.loads(stripped)
-                    rec["synced"] = True
-                    lines[i] = json.dumps(rec, ensure_ascii=False) + "\n"
-                except json.JSONDecodeError:
-                    pass
+    from logs.conversation_store import get_write_lock
 
-    _STORE_PATH.write_text("".join(lines), encoding="utf-8")
+    with get_write_lock():
+        lines = _STORE_PATH.read_text(encoding="utf-8").splitlines(keepends=True)
+        for i, line in enumerate(lines):
+            if i in indices:
+                stripped = line.strip()
+                if stripped:
+                    try:
+                        rec = json.loads(stripped)
+                        rec["synced"] = True
+                        lines[i] = json.dumps(rec, ensure_ascii=False) + "\n"
+                    except json.JSONDecodeError:
+                        pass
+
+        _STORE_PATH.write_text("".join(lines), encoding="utf-8")
 
 
 def sync(dry_run: bool = False) -> None:
@@ -125,8 +133,10 @@ def sync(dry_run: bool = False) -> None:
     try:
         conn = _get_conn()
     except MySQLError as exc:
+        # Không sys.exit: sync() còn được auto_sync gọi như library trong process API.
+        # SystemExit không phải Exception nên sẽ lọt qua except ở caller và giết thread.
         logger.error("Không kết nối được MySQL: %s", exc)
-        sys.exit(1)
+        raise
 
     _ensure_table(conn)
     cursor = conn.cursor()
@@ -163,4 +173,7 @@ def sync(dry_run: bool = False) -> None:
 
 if __name__ == "__main__":
     dry_run = "--dry-run" in sys.argv
-    sync(dry_run=dry_run)
+    try:
+        sync(dry_run=dry_run)
+    except MySQLError:
+        sys.exit(1)

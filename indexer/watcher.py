@@ -17,7 +17,7 @@ from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
 import config
-from indexer.obsidian_loader import load_single_file
+from indexer.obsidian_loader import load_single_file, to_vault_relative
 from indexer.embedder import embed_texts
 
 logging.basicConfig(
@@ -53,7 +53,6 @@ def _save_index(index: dict[str, dict]) -> None:
 
 def _reindex_file(path: Path) -> None:
     """Re-embed một file duy nhất và cập nhật index."""
-    relative = str(path)
     logger.info("Re-indexing: %s", path.name)
 
     doc = load_single_file(path)
@@ -66,9 +65,11 @@ def _reindex_file(path: Path) -> None:
         logger.warning("Embedding failed for: %s", path.name)
         return
 
+    # Dùng doc["path"] (tương đối, do load_single_file sinh) làm khóa để khớp
+    # với index do build_index tạo — tránh tạo record trùng.
     index = _load_index()
-    index[relative] = {
-        "path": relative,
+    index[doc["path"]] = {
+        "path": doc["path"],
         "title": doc["title"],
         "content": doc["content"],
         "metadata": doc["metadata"],
@@ -80,7 +81,7 @@ def _reindex_file(path: Path) -> None:
 
 def _remove_from_index(path: Path) -> None:
     """Xóa note đã bị delete khỏi index."""
-    relative = str(path)
+    relative = to_vault_relative(path)
     index = _load_index()
     if relative in index:
         del index[relative]

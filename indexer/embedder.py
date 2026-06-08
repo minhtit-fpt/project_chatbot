@@ -7,16 +7,15 @@ _client = genai.Client(api_key=config.GEMINI_API_KEY)
 
 
 def embed_texts(texts: list[str], task_type: str = "RETRIEVAL_DOCUMENT") -> list[list[float]]:
-    import time as _time
     embeddings = []
     total = len(texts)
-    t_start = _time.time()
+    t_start = time.time()
 
     for i, text in enumerate(texts):
         embeddings.append(_embed_one(text, task_type))
         n_done = i + 1
         if n_done % 50 == 0 or n_done == total:
-            elapsed = _time.time() - t_start
+            elapsed = time.time() - t_start
             rate = n_done / elapsed if elapsed > 0 else 0
             eta = (total - n_done) / rate if rate > 0 else 0
             print(
