@@ -7,7 +7,7 @@ Chatbot trả lời câu hỏi khách hàng (FAQ bán hàng) dựa trên dữ li
 ```
 Obsidian Vault (.md)
       ↓
-Embedding (Gemini text-embedding-004) → index.json (lưu local)
+Embedding (Gemini `gemini-embedding-2`) → index.json (lưu local)
       ↓
 User hỏi → Embed câu hỏi → Cosine similarity in-memory
       ↓
@@ -24,8 +24,8 @@ Ghi log JSONL local → debounce 180s → sync MySQL
 |---|---|
 | Language | Python 3.11+ |
 | Backend | FastAPI |
-| Embedding | Gemini text-embedding-004 |
-| LLM | Gemini 2.5 Flash / 2.5 Pro |
+| Embedding | Gemini `gemini-embedding-2` (xem `config.EMBEDDING_MODEL`) |
+| LLM | Gemini 2.5 Flash (mặc định) — fallback chain qua `config.CHAT_MODEL_CHAIN` |
 | Vector store | `index.json` (in-memory cosine similarity) |
 | Data source | Obsidian Vault (local) |
 | Logging | MySQL port 3307, database `chatbot_logs` |
@@ -36,20 +36,25 @@ Ghi log JSONL local → debounce 180s → sync MySQL
 project_chatbot/
 ├── config.py                   # Cấu hình tập trung (đọc từ .env)
 ├── indexer/
-│   ├── obsidian_loader.py      # Đọc .md, parse frontmatter, [[wiki-links]]
-│   ├── embedder.py             # Gọi Gemini embedding API
-│   └── build_index.py          # Script build/rebuild index.json
+│   ├── obsidian_loader.py      # Đọc .md, parse frontmatter, [[wiki-links]]; to_vault_relative()
+│   ├── embedder.py             # Gọi Gemini embedding API (batch + retry)
+│   ├── build_index.py          # Script build/update index.json (--update, --refresh-meta)
+│   └── watcher.py              # Theo dõi vault, tự re-embed note thay đổi
 ├── rag/
-│   ├── retriever.py            # Cosine similarity, top-k
+│   ├── retriever.py            # Cosine similarity in-memory, top-k + boost (keyword/policy/featured)
 │   ├── prompt_builder.py       # System prompt + context builder
-│   └── chat_engine.py          # RAG pipeline orchestrator
+│   ├── retry.py                # Exponential backoff cho Gemini API (call_with_retry, is_retryable)
+│   └── chat_engine.py          # RAG pipeline orchestrator (async, TTL cache, model-chain fallback)
 ├── api/
-│   └── main.py                 # FastAPI app — POST /chat, GET /health
+│   ├── main.py                 # FastAPI app — POST /chat, /feedback, GET /session, /health (lifespan)
+│   └── formatting.py           # format_answer_lines: tách câu trả lời thành mảng từng dòng cho FE
 ├── logs/
-│   ├── conversation_store.py   # Ghi Q&A vào JSONL local
+│   ├── conversation_store.py   # Ghi Q&A vào JSONL local (get_write_lock() dùng chung với sync)
 │   ├── auto_sync.py            # Debounce timer per session_id
 │   ├── sync_to_mysql.py        # Sync JSONL → MySQL
 │   └── mysql_logger.py         # MySQL connection helper
+├── tests/
+│   └── test_fixes.py           # Unit test (pytest, mock — không gọi API thật)
 ├── data/
 │   └── index.json              # Vector index (gitignore)
 └── .env                        # Secrets (gitignore)
@@ -181,6 +186,14 @@ Server sẵn sàng tại `http://localhost:8000`.
 
 ## API
 
+### `GET /session`
+
+Widget gọi khi user mở chat lần đầu để lấy `session_id`.
+
+```json
+{ "session_id": "550e8400-e29b-41d4-a716-446655440000" }
+```
+
 ### `POST /chat`
 
 ```json
@@ -192,17 +205,40 @@ Server sẵn sàng tại `http://localhost:8000`.
 
 // Response
 {
+  "message_id": "8f14e45f-ceea-4670-9c0e-69f71f4f0b6f",
   "session_id": "550e8400-e29b-41d4-a716-446655440000",
-  "answer": "Sản phẩm X được bảo hành 12 tháng...",
-  "sources": [
-    { "title": "Chính sách bảo hành", "path": "chinh-sach/bao-hanh.md", "score": 0.91 }
+  "answer": [
+    "Sản phẩm X được bảo hành 12 tháng tại các trung tâm uỷ quyền.",
+    "Quý khách giữ hoá đơn mua hàng để được hỗ trợ bảo hành nhanh nhất."
   ],
-  "latency_ms": 1240
+  "latency_ms": 1240,
+  "cached": false
 }
 ```
 
 - Không truyền `session_id` → server tự tạo UUID mới.
 - Truyền lại `session_id` từ response trước → chatbot nhớ ngữ cảnh hội thoại.
+- `answer` là **mảng từng dòng** đã làm sạch khoảng trắng (qua `format_answer_lines`) — FE tự xuống dòng/style, không cần parse chuỗi.
+- `message_id` dùng để gửi kèm khi gọi `POST /feedback`.
+- `cached: true` nghĩa là câu trả lời được phục vụ từ cache (TTL theo `config.RESPONSE_CACHE_TTL`), không gọi LLM lần nữa.
+- **Lưu ý**: `sources` (nguồn trích dẫn) **không** trả về cho người dùng cuối — vẫn được ghi vào log/DB nội bộ để theo dõi chất lượng.
+
+### `POST /feedback`
+
+Widget gọi sau khi user bấm thumbs up/down trên một câu trả lời.
+
+```json
+// Request
+{
+  "message_id": "8f14e45f-ceea-4670-9c0e-69f71f4f0b6f",
+  "session_id": "550e8400-e29b-41d4-a716-446655440000",
+  "rating": "up",
+  "comment": "optional, tối đa 500 ký tự"
+}
+
+// Response
+{ "ok": true }
+```
 
 ### `GET /health`
 
