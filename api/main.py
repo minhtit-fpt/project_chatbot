@@ -1,5 +1,6 @@
 import logging
 import uuid
+from contextlib import asynccontextmanager
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException
@@ -13,6 +14,17 @@ from rag.chat_engine import answer_async, init_retriever
 
 logger = logging.getLogger(__name__)
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Pre-warm index vào RAM khi khởi động (thay cho on_event đã deprecated).
+    try:
+        await init_retriever()
+    except FileNotFoundError as exc:
+        logger.error("Index chưa được build: %s", exc)
+    yield
+
+
 app = FastAPI(
     title="FAQ Chatbot API",
     version="2.0.0",
@@ -20,6 +32,7 @@ app = FastAPI(
         "API cho widget chatbot hỗ trợ khách hàng. "
         "Widget gọi POST /chat để hỏi, POST /feedback để gửi đánh giá."
     ),
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -75,14 +88,6 @@ class FeedbackResponse(BaseModel):
 # Lifecycle
 # ---------------------------------------------------------------------------
 
-@app.on_event("startup")
-async def startup_event() -> None:
-    try:
-        await init_retriever()
-    except FileNotFoundError as exc:
-        logger.error("Index chưa được build: %s", exc)
-
-
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
@@ -120,8 +125,10 @@ async def chat(request: ChatRequest) -> ChatResponse:
             detail="Dịch vụ AI tạm thời không khả dụng, vui lòng thử lại sau.",
         )
     except Exception as exc:
+        # Không nhét nội dung exception vào response (tránh rò chi tiết nội bộ);
+        # chi tiết đã được ghi server-side qua logger.exception.
         logger.exception("Lỗi không mong đợi: %s", exc)
-        raise HTTPException(status_code=500, detail=f"Lỗi xử lý: {exc}")
+        raise HTTPException(status_code=500, detail="Lỗi xử lý nội bộ, vui lòng thử lại sau.")
     # answer (chuỗi nhiều dòng từ LLM) → mảng từng dòng đã làm sạch cho FE.
     # Bản text đầy đủ vẫn được log ở DB (trong chat_engine.answer()).
     # Tạo dict mới (không mutate `result`); key "sources" dư bị Pydantic bỏ qua.

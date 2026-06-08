@@ -32,7 +32,6 @@ Thumbs.db
 # Jupyter
 .ipynb_checkpoints/
 
-test_chat.py
 debug_retrieval.py
 check_api.py
 query

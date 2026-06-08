@@ -26,6 +26,15 @@ _STORE_PATH = config.INDEX_PATH.parent.parent / "logs" / "conversations.jsonl"
 _write_lock = threading.Lock()
 
 
+def get_write_lock() -> threading.Lock:
+    """Lock bảo vệ ghi vào JSONL store.
+
+    sync_to_mysql._mark_synced() phải dùng CÙNG lock này khi đọc-sửa-ghi đè
+    cả file, nếu không dòng vừa append từ chatbot có thể bị mất.
+    """
+    return _write_lock
+
+
 def _ensure_dir() -> None:
     _STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
 

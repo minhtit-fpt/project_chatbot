@@ -38,7 +38,7 @@ Top 5 notes → Gemini 2.5 Flash → Trả lời + citations
 |---|---|
 | Language | Python |
 | Backend | FastAPI |
-| Embedding | Gemini text-embedding-004 |
+| Embedding | Gemini `gemini-embedding-2` (xem `config.EMBEDDING_MODEL`) |
 | LLM | Gemini 2.5 Flash (production) / Gemini 2.5 Pro (phức tạp) |
 | Vector store | file `index.json` (in-memory cosine similarity) |
 | Data source | Obsidian Vault (>1000 notes, local) |
@@ -60,23 +60,27 @@ project_chatbot/
 ├── config.py                   # Cấu hình tập trung
 ├── indexer/
 │   ├── __init__.py
-│   ├── obsidian_loader.py      # Đọc .md, parse frontmatter, xử lý [[wiki-links]]
+│   ├── obsidian_loader.py      # Đọc .md, parse frontmatter, xử lý [[wiki-links]]; to_vault_relative()
 │   ├── embedder.py             # Gọi Gemini embedding API
-│   └── build_index.py          # Script build/update index.json
+│   ├── build_index.py          # Script build/update index.json (--update, --refresh-meta)
+│   └── watcher.py              # Watchdog theo dõi vault, re-embed note thay đổi (path tương đối)
 ├── rag/
 │   ├── __init__.py
-│   ├── retriever.py            # Cosine similarity in-memory, top-k
+│   ├── retriever.py            # Cosine similarity in-memory, top-k + keyword/policy/featured boost
 │   ├── prompt_builder.py       # System prompt + context builder
-│   ├── retry.py                # Exponential backoff + jitter cho Gemini API
-│   └── chat_engine.py          # Orchestrator RAG pipeline (async, TTL cache)
+│   ├── retry.py                # Exponential backoff cho Gemini API (is_retryable, call_with_retry)
+│   └── chat_engine.py          # Orchestrator RAG pipeline (async, TTL cache, model chain, fallback)
 ├── api/
 │   ├── __init__.py
-│   └── main.py                 # FastAPI app, endpoint /chat
+│   ├── main.py                 # FastAPI app: /chat, /feedback, /session, /health (lifespan)
+│   └── formatting.py           # format_answer_lines: tách answer thành mảng từng dòng cho FE
+├── tests/
+│   └── test_fixes.py           # Unit test (pytest, mock — không gọi API thật)
 ├── data/
 │   └── index.json              # Vector index (gitignore)
 └── logs/
     ├── __init__.py
-    ├── conversation_store.py   # Ghi Q&A vào JSONL local (không cần MySQL)
+    ├── conversation_store.py   # Ghi Q&A vào JSONL local (không cần MySQL); get_write_lock()
     ├── auto_sync.py            # Debounce timer per session → trigger sync
     ├── sync_to_mysql.py        # Sync JSONL → MySQL (chỉ module này cần DB credentials)
     ├── mysql_logger.py         # MySQL connection helper (dùng bởi sync_to_mysql)
@@ -107,6 +111,16 @@ project_chatbot/
 - Chỉ `sync_to_mysql.py` cần MySQL credentials → giảm attack surface
 - MySQL chạy port **3307** (không phải 3306), database `chatbot_logs`
 - Mỗi cuộc trò chuyện có `session_id` UUID riêng — client giữ và gửi kèm mỗi request
+
+### Bất biến: path-key của record index phải TƯƠNG ĐỐI so với vault root
+- `build_index.py` (qua `load_vault`) và `watcher.py` (qua `load_single_file`) đều phải
+  sinh `path` **tương đối** (vd `tivi/Samsung-X.md`), dùng làm khóa định danh record.
+- Nếu một bên dùng path tuyệt đối → watcher tạo **record trùng** và phá `_policy_boost`
+  (hàm này kiểm tra path KHÔNG chứa `/` hay `\`). Đây là bug đã sửa — dùng `to_vault_relative()`.
+
+### Bất biến: model embedding của query phải KHỚP model đã build index
+- `config.EMBEDDING_MODEL` hiện là `gemini-embedding-2`. Đổi model → phải **rebuild index**
+  (`python -m indexer.build_index`), nếu không query vector và document vector lệch không gian → cosine sai.
 
 ### Fine-tune sẽ làm ở Phase 4 (chưa cần ngay)
 - Phase 4 chỉ kích hoạt khi đã có đủ log dữ liệu thật từ khách hàng

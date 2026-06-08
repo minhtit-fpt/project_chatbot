@@ -10,6 +10,20 @@ def _should_exclude(path: Path) -> bool:
     return any(pattern in parts for pattern in config.EXCLUDE_PATTERNS)
 
 
+def to_vault_relative(file_path: Path) -> str:
+    """Đường dẫn tương đối so với vault root — khóa định danh record trong index.
+
+    build_index (load_vault) dùng path tương đối; watcher phải dùng CÙNG dạng,
+    nếu không sẽ tạo record trùng và phá vỡ logic boost dựa trên path
+    (vd _policy_boost kiểm tra path không chứa dấu "/" hay "\\").
+    Fallback về path tuyệt đối nếu file nằm ngoài vault root.
+    """
+    try:
+        return str(file_path.resolve().relative_to(config.OBSIDIAN_VAULT_PATH.resolve()))
+    except ValueError:
+        return str(file_path)
+
+
 def _parse_frontmatter(content: str) -> tuple[dict, str]:
     """Return (metadata, body) from a markdown file with optional YAML frontmatter."""
     if not content.startswith("---"):
@@ -101,7 +115,8 @@ def load_single_file(file_path: Path) -> dict | None:
     """Load và xử lý một file .md duy nhất — dùng cho watcher re-index.
 
     Returns None nếu file bị exclude hoặc rỗng.
-    path trong record là đường dẫn tuyệt đối (string) vì watcher không biết vault root.
+    path trong record là đường dẫn TƯƠNG ĐỐI so với vault root — khớp với
+    load_vault() để watcher cập nhật đúng record thay vì tạo bản trùng.
     """
     if _should_exclude(file_path):
         return None
@@ -129,7 +144,7 @@ def load_single_file(file_path: Path) -> dict | None:
     content = f"{title}\n{keyword_str}\n{body}".strip()
 
     return {
-        "path": str(file_path),
+        "path": to_vault_relative(file_path),
         "title": title,
         "content": content,
         "metadata": meta,
