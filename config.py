@@ -62,7 +62,7 @@ RESPONSE_CACHE_TTL = 300        # seconds (5 phút)
 RESPONSE_CACHE_MAX_SIZE = 256   # số câu hỏi tối đa được cache
 
 # Conversation memory (in-memory per-session — giúp chatbot nhớ ngữ cảnh trong phiên)
-HISTORY_MAX_TURNS = 10          # số cặp Q&A gần nhất gửi lại cho model mỗi lượt
+HISTORY_MAX_TURNS = 15          # số cặp Q&A gần nhất gửi lại cho model mỗi lượt
 HISTORY_TTL = 1800             # seconds (30 phút) — session idle quá lâu thì quên
 HISTORY_MAX_SESSIONS = 1000    # trần số session giữ trong RAM (chống rò bộ nhớ)
 
