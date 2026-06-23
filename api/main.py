@@ -11,6 +11,7 @@ import config
 from api.formatting import format_answer_lines
 from logs.conversation_store import log_feedback
 from rag.chat_engine import answer_async, init_retriever
+from rag.retry import is_retryable
 
 logger = logging.getLogger(__name__)
 
@@ -129,6 +130,15 @@ async def chat(request: ChatRequest) -> ChatResponse:
             detail="Dịch vụ AI tạm thời không khả dụng, vui lòng thử lại sau.",
         )
     except Exception as exc:
+        # Gemini trả ServerError 503 (quá tải) là lỗi transient nhưng KHÔNG phải
+        # RuntimeError → nếu để rơi xuống nhánh 500 dưới, người dùng thấy "Lỗi xử lý
+        # nội bộ" thay vì thông báo bận tạm thời. Map lỗi retryable → 503.
+        if is_retryable(exc):
+            logger.warning("Gemini tạm thời quá tải: %s", exc)
+            raise HTTPException(
+                status_code=503,
+                detail="Dịch vụ AI đang bận, vui lòng thử lại sau giây lát.",
+            )
         # Không nhét nội dung exception vào response (tránh rò chi tiết nội bộ);
         # chi tiết đã được ghi server-side qua logger.exception.
         logger.exception("Lỗi không mong đợi: %s", exc)
