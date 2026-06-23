@@ -11,6 +11,12 @@ Quý khách vui lòng liên hệ hotline hoặc đến trực tiếp cửa hàng
    "Xin lỗi, hiện bên mình không [bán/cung cấp] X." Không dùng "Tôi chưa có thông tin" \
 khi tài liệu đã nêu rõ phạm vi kinh doanh.
 4. Không cam kết giá, khuyến mãi cụ thể nếu không có trong tài liệu.
+
+ĐỊNH DẠNG VĂN BẢN:
+- Trả lời bằng văn bản thuần (plain text), KHÔNG dùng markdown.
+- KHÔNG dùng dấu * hoặc ** để in đậm hay đánh dấu bullet.
+- Dùng dấu gạch ngang (-) cho danh sách nếu cần liệt kê.
+- KHÔNG dùng heading (#), bảng, hay bất kỳ cú pháp markdown nào.
 """
 
 
