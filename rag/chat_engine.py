@@ -12,6 +12,7 @@ import config
 from rag.retriever import Retriever
 from rag.prompt_builder import SYSTEM_PROMPT, build_prompt
 from rag.retry import call_with_retry, is_retryable
+from rag.history_store import SessionHistoryStore
 from logs.conversation_store import log_conversation
 from logs.auto_sync import notify_message
 
@@ -67,21 +68,51 @@ _response_cache = _TTLCache(
     ttl=config.RESPONSE_CACHE_TTL,
 )
 
+# Kho nhớ hội thoại per-session — giúp model nhớ ngữ cảnh các lượt trước trong phiên.
+_history_store = SessionHistoryStore(
+    max_turns=config.HISTORY_MAX_TURNS,
+    ttl=config.HISTORY_TTL,
+    max_sessions=config.HISTORY_MAX_SESSIONS,
+)
 
-def _generate_answer(messages: str) -> str:
+
+def _build_contents(current_prompt: str, history: list[dict]) -> list[types.Content]:
+    """Ghép lịch sử hội thoại + câu hỏi hiện tại thành contents đa lượt cho Gemini.
+
+    Mỗi lượt cũ → 1 message role="user" (câu hỏi gốc) + 1 message role="model"
+    (câu trả lời). Tài liệu RAG chỉ chèn vào lượt hiện tại (current_prompt) để lịch
+    sử gọn nhẹ, không nhân bản context qua từng lượt.
+    """
+    contents: list[types.Content] = []
+    for turn in history:
+        contents.append(
+            types.Content(role="user", parts=[types.Part(text=turn["question"])])
+        )
+        contents.append(
+            types.Content(role="model", parts=[types.Part(text=turn["answer"])])
+        )
+    contents.append(
+        types.Content(role="user", parts=[types.Part(text=current_prompt)])
+    )
+    return contents
+
+
+def _generate_answer(messages: str, history: list[dict] | None = None) -> str:
     """Sinh câu trả lời, thử lần lượt các model trong CHAT_MODEL_CHAIN.
 
+    Gửi kèm lịch sử hội thoại (nếu có) để model nhớ ngữ cảnh các lượt trước.
     Mỗi model được retry transient (exponential backoff); nếu vẫn lỗi hoặc trả
     rỗng → rớt sang model kế tiếp. Hết chain:
       - còn lỗi transient → raise (để API trả 503),
       - chỉ trả rỗng (vd bị chặn an toàn) → trả FALLBACK_ANSWER thay vì None.
     """
+    contents = _build_contents(messages, history or [])
     last_exc: Exception | None = None
     for model in config.CHAT_MODEL_CHAIN:
         def _call(model: str = model) -> str:
             resp = _client.models.generate_content(
                 model=model,
-                contents=messages,
+                contents=contents,
                 config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT),
             )
             return resp.text or ""
@@ -119,8 +150,13 @@ def get_retriever() -> Retriever:
 
 def answer(question: str, session_id: str) -> dict:
     t0 = time.time()
+    history = _history_store.get(session_id)
+    # Chỉ cache câu hỏi KHÔNG phụ thuộc ngữ cảnh (lượt đầu của phiên). Khi đã có
+    # lịch sử, câu trả lời phụ thuộc các lượt trước → không đọc/không ghi cache chung;
+    # nếu không, lượt sau cùng câu chữ sẽ bị trả nhầm đáp án đã cache của phiên khác.
+    use_cache = not history
     cache_key = question.strip().lower()
-    cached_entry = _response_cache.get(cache_key)
+    cached_entry = _response_cache.get(cache_key) if use_cache else None
 
     if cached_entry is not None:
         answer_text = cached_entry["answer"]
@@ -130,15 +166,19 @@ def answer(question: str, session_id: str) -> dict:
         retriever = get_retriever()
         context_docs = retriever.search(question)
         messages = build_prompt(question, context_docs)
-        answer_text = _generate_answer(messages)
+        answer_text = _generate_answer(messages, history)
         sources = [
             {"title": d["title"], "path": d["path"], "score": round(d["score"], 4)}
             for d in context_docs
         ]
         # Lưu cache không kèm message_id — mỗi lần trả vẫn sinh message_id mới
         # và ghi log riêng để feedback ánh xạ đúng từng lượt hỏi.
-        _response_cache.set(cache_key, {"answer": answer_text, "sources": sources})
+        if use_cache:
+            _response_cache.set(cache_key, {"answer": answer_text, "sources": sources})
         cached = False
+
+    # Ghi lượt vừa rồi vào lịch sử để các lượt sau trong cùng phiên có ngữ cảnh.
+    _history_store.append(session_id, question, answer_text)
 
     latency_ms = int((time.time() - t0) * 1000)
     message_id = str(uuid.uuid4())

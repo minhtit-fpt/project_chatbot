@@ -32,6 +32,10 @@ Thumbs.db
 # Jupyter
 .ipynb_checkpoints/
 
+# Test artifacts
+.coverage
+.pytest_cache/
+
 debug_retrieval.py
 check_api.py
 query
