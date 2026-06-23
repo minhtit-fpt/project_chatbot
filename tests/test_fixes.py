@@ -102,7 +102,7 @@ def test_answer_uses_cache_on_repeat(monkeypatch):
     monkeypatch.setattr(
         chat_engine,
         "_generate_answer",
-        lambda messages: gen_calls.append(1) or "Đáp án",
+        lambda messages, history=None: gen_calls.append(1) or "Đáp án",
     )
     monkeypatch.setattr(chat_engine, "log_conversation", lambda *a, **k: None)
     monkeypatch.setattr(chat_engine, "notify_message", lambda *a, **k: None)

@@ -9,7 +9,7 @@
 
 **Phase đang làm**: Phase 3 — Tối ưu
 **Bắt đầu**: 2026-04-21
-**Cập nhật lần cuối**: 2026-06-05
+**Cập nhật lần cuối**: 2026-06-23
 
 ---
 
@@ -45,6 +45,7 @@
 - [ ] 3.4 Routing LLM (nếu cần)
 - [ ] 3.5 Re-ranker (nếu cần)
 - [~] 3.6 Featured boost (Hướng A) — ĐÃ tag 3617 note + ĐÃ code (`_featured_boost`, `config.FEATURED_BOOST=0.08`, `build_index --refresh-meta`). **CÒN: chạy `--refresh-meta` + restart app** để index có `metadata.featured`. Xem Ghi chú 2026-06-05.
+- [x] 3.7 Nhớ hội thoại (conversation memory) — `rag/history_store.py` (`SessionHistoryStore` in-memory per-session) + `chat_engine` truyền multi-turn `contents` cho Gemini (branch: `feat/conversation-memory`, 2026-06-23). Xem Ghi chú 2026-06-23.
 
 ### Phase 1 — MVP
 - [x] 1.1 Setup môi trường: `requirements.txt`, `.env.example`, `config.py`
@@ -90,6 +91,13 @@
   - Lý do chọn A: data-driven, tái dùng pattern sẵn có, code nhỏ, áp dụng mọi câu hỏi rộng, boost nhỏ (~0.08) không đè câu hỏi cụ thể. Hướng B (note tổng hợp "Các dòng nổi bật" + keywords) để dành làm thêm sau nếu cần câu trả lời tổng quan đẹp.
   - **Tiến độ 2026-06-05**: (a) DATA — đã gắn `featured: true` cho **3617 note** famous brands trong vault `D:\chatbot` (script tag KHÔNG giữ trong repo; map nổi tiếng lưu ngay dưới đây). Backup vault: `C:\Users\ham48\chatbot_backup_featured_2026-06-05.zip`. (b) CODE — `config.FEATURED_BOOST=0.08`, `_featured_boost()` trong `rag/retriever.py` (boost candidate trong pool, không force-add), chế độ `python -m indexer.build_index --refresh-meta` (cập nhật metadata, KHÔNG re-embed). **CÒN LẠI để chạy thật**: chạy `--refresh-meta` + restart app + sync vault lên server. Quy mô: famous ~48% kho → boost chủ yếu "dìm" hàng bình dân (Asanzo/UBC/Skyworth...) xuống.
   - **Map hãng nổi tiếng (NGUỒN CHÂN LÝ — để re-tag sản phẩm mới; gắn `featured: true` vào frontmatter note có brand này trong tên file)**: tivi=samsung,lg,sony · dieu-hoa=daikin,panasonic,mitsubishi,lg,toshiba · tu-lanh=samsung,lg,panasonic,toshiba,hitachi · may-giat=lg,samsung,panasonic,toshiba,electrolux · dien-gia-dung=panasonic,philips,sharp,sunhouse,kangaroo · thiet-bi-nha-bep=bosch,hafele,electrolux,siemens · tu-dong=sanaky,alaska,kangaroo · tu-mat=sanaky,alaska,darling · may-loc-nuoc=kangaroo,karofi,mutosi · binh-nong-lanh=ariston,ferroli,panasonic · thiet-bi-am-thanh=sony,samsung,jbl,denon,yamaha · may-say-quan-ao=bosch,lg,electrolux,samsung · quat-dien=asia,senko,panasonic,sunhouse · may-rua-bat=bosch,texgio,eurosun · may-nuoc-nong=ariston,midea · thiet-bi-van-phong=canon,samsung,lg
+- **2026-06-23**: Khách báo "chatbot không nhớ thông tin đã hỏi". **Nguyên nhân gốc** (KHÔNG phải context window nhỏ): pipeline hoàn toàn stateless — `session_id` trước đây chỉ dùng để log + map feedback, KHÔNG bao giờ nạp lại các lượt trước gửi cho Gemini. `build_prompt` không có tham số history, `_generate_answer` gửi đúng 1 chuỗi của lượt hiện tại. **Đã sửa** (branch `feat/conversation-memory`):
+  1. Thêm `rag/history_store.py` — `SessionHistoryStore` in-memory per-session (TTL 30', tối đa 10 lượt/phiên, trần 1000 phiên, có lock). Đúng triết lý "siêu nhẹ", không thêm DB.
+  2. `chat_engine._build_contents()` ghép history thành `contents` đa lượt (`role=user`/`model`); `_generate_answer(messages, history=None)`; `answer()` nạp history → truyền cho model → ghi lại lượt vừa rồi.
+  3. **Sửa cache** ([chat_engine.py](../rag/chat_engine.py)): cache chung chỉ áp dụng cho lượt ĐẦU (không ngữ cảnh); lượt có history thì bypass cache (nếu không sẽ trả nhầm đáp án cache của phiên khác).
+  4. Config mới: `HISTORY_MAX_TURNS=10`, `HISTORY_TTL=1800`, `HISTORY_MAX_SESSIONS=1000`. Test: `tests/test_history.py` (12 test), tổng suite 19 pass, coverage history_store 98% / chat_engine 87%.
+  - **Giới hạn còn lại (chưa làm — enhancement riêng)**: retrieval vẫn dùng nguyên văn câu hỏi hiện tại. Câu follow-up cụt như "giá bao nhiêu?" → model hiểu ngữ cảnh nhưng tài liệu RAG retrieve có thể lệch. Cần query-rewriting/condense câu hỏi theo history (Phase 3 sau).
+  - **Lưu ý vận hành**: history nằm trong RAM của tiến trình API → restart app là mất; nếu sau này chạy nhiều worker/replica cần sticky-session theo `session_id` hoặc chuyển store sang Redis.
 
 ---
 

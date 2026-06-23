@@ -69,7 +69,8 @@ project_chatbot/
 │   ├── retriever.py            # Cosine similarity in-memory, top-k + keyword/policy/featured boost
 │   ├── prompt_builder.py       # System prompt + context builder
 │   ├── retry.py                # Exponential backoff cho Gemini API (is_retryable, call_with_retry)
-│   └── chat_engine.py          # Orchestrator RAG pipeline (async, TTL cache, model chain, fallback)
+│   ├── history_store.py        # SessionHistoryStore: nhớ hội thoại in-memory per-session (TTL, max turns)
+│   └── chat_engine.py          # Orchestrator RAG pipeline (async, TTL cache, model chain, fallback, conversation memory)
 ├── api/
 │   ├── __init__.py
 │   ├── main.py                 # FastAPI app: /chat, /feedback, /session, /health (lifespan)
@@ -121,6 +122,19 @@ project_chatbot/
 ### Bất biến: model embedding của query phải KHỚP model đã build index
 - `config.EMBEDDING_MODEL` hiện là `gemini-embedding-2`. Đổi model → phải **rebuild index**
   (`python -m indexer.build_index`), nếu không query vector và document vector lệch không gian → cosine sai.
+
+### Nhớ hội thoại (conversation memory) — Phase 3
+- `rag/history_store.py` giữ lịch sử Q&A **in-memory theo `session_id`** (TTL 30', tối đa
+  `HISTORY_MAX_TURNS` lượt/phiên). `chat_engine.answer()` nạp history → `_build_contents()`
+  ghép thành `contents` đa lượt (`role=user`/`model`) gửi cho Gemini → ghi lại lượt vừa rồi.
+- **Cache phụ thuộc ngữ cảnh**: `_response_cache` (theo nguyên văn câu hỏi) CHỈ áp dụng cho
+  lượt ĐẦU của phiên (history rỗng). Lượt đã có history → bypass cache, nếu không sẽ trả nhầm
+  đáp án đã cache của phiên khác. Đừng "tối ưu" bằng cách cache luôn lượt có ngữ cảnh.
+- **Bất biến**: history nằm trong RAM của tiến trình API → restart là mất; chạy nhiều
+  worker/replica phải sticky-session theo `session_id` (hoặc chuyển store sang Redis).
+- **Giới hạn đã biết**: retrieval vẫn dùng nguyên văn câu hỏi hiện tại → câu follow-up cụt
+  ("giá bao nhiêu?") model hiểu ngữ cảnh nhưng tài liệu RAG có thể lệch. Query-rewrite theo
+  history là enhancement riêng (chưa làm).
 
 ### Fine-tune sẽ làm ở Phase 4 (chưa cần ngay)
 - Phase 4 chỉ kích hoạt khi đã có đủ log dữ liệu thật từ khách hàng

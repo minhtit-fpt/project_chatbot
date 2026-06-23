@@ -6,25 +6,35 @@ FE tự xuống dòng và style từng dòng — bản text đầy đủ vẫn �
 """
 import re
 
-# Gộp mọi cụm khoảng trắng liên tiếp (space, tab...) thành 1 space.
 _WHITESPACE_RUN = re.compile(r"\s+")
+
+_BOLD = re.compile(r"\*{1,3}(.+?)\*{1,3}")
+_HEADING = re.compile(r"^#{1,6}\s+")
+_BULLET_STAR = re.compile(r"^\*\s+")
+
+
+def _strip_markdown(line: str) -> str:
+    line = _HEADING.sub("", line)
+    line = _BOLD.sub(r"\1", line)
+    line = _BULLET_STAR.sub("- ", line)
+    return line
 
 
 def format_answer_lines(text: str) -> list[str]:
-    """Tách `text` thành list các dòng đã làm sạch.
+    """Tách `text` thành list các dòng plain text đã làm sạch.
 
-    - Mỗi phần tử là một dòng nội dung.
-    - Bỏ khoảng trắng đầu/cuối và gộp khoảng trắng thừa ở giữa thành 1 space.
-    - Bỏ các dòng trống (sinh ra từ "\\n\\n").
+    - Strip markdown (bold, heading, bullet *).
+    - Bỏ khoảng trắng thừa và dòng trống.
 
     Ví dụ::
 
-        >>> format_answer_lines("Chào bạn:\\n\\n    *   Giá:  5.000.000 đ")
-        ['Chào bạn:', '* Giá: 5.000.000 đ']
+        >>> format_answer_lines("**Chào bạn:**\\n\\n* Giá: 5.000.000 đ")
+        ['Chào bạn:', '- Giá: 5.000.000 đ']
     """
     lines: list[str] = []
     for raw_line in text.split("\n"):
-        cleaned = _WHITESPACE_RUN.sub(" ", raw_line).strip()
+        cleaned = _strip_markdown(raw_line)
+        cleaned = _WHITESPACE_RUN.sub(" ", cleaned).strip()
         if cleaned:
             lines.append(cleaned)
     return lines

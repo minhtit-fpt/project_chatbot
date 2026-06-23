@@ -53,6 +53,10 @@ class ChatRequest(BaseModel):
         default=None,
         description="UUID của session hiện tại. Bỏ trống để tạo session mới.",
     )
+    test: bool = Field(
+        default=False,
+        description="Nếu True, không ghi log vào JSONL/MySQL (dùng khi test thử).",
+    )
 
 
 class ChatResponse(BaseModel):
@@ -115,7 +119,7 @@ async def new_session() -> SessionResponse:
 async def chat(request: ChatRequest) -> ChatResponse:
     session_id = request.session_id or str(uuid.uuid4())
     try:
-        result = await answer_async(request.question, session_id)
+        result = await answer_async(request.question, session_id, skip_log=request.test)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=503, detail=str(exc))
     except RuntimeError as exc:
