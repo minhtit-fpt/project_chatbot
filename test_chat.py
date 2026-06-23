@@ -10,7 +10,6 @@ import uuid
 
 from api.formatting import format_answer_lines
 from rag.chat_engine import answer
-from logs.sync_to_mysql import sync
 
 print("Chatbot FAQ — gõ 'quit' để thoát\n")
 
@@ -25,7 +24,7 @@ def main() -> None:
         if not question or question.lower() == "quit":
             break
 
-        result = answer(question, session_id)
+        result = answer(question, session_id, skip_log=True)
         asked += 1
 
         # answer hiển thị đúng như client/FE nhận: mảng từng dòng đã làm sạch.
@@ -37,11 +36,6 @@ def main() -> None:
         sources = ", ".join(s["title"] for s in result["sources"])
         print(f"[debug] Nguồn (chỉ lưu DB): {sources}")
         print(f"[debug] Latency: {result['latency_ms']}ms\n")
-
-    if asked > 0:
-        print("Đang sync log lên MySQL...")
-        sync()
-        print("Done.")
 
 
 main()

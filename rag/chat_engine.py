@@ -148,7 +148,7 @@ def get_retriever() -> Retriever:
     return _retriever
 
 
-def answer(question: str, session_id: str) -> dict:
+def answer(question: str, session_id: str, *, skip_log: bool = False) -> dict:
     t0 = time.time()
     history = _history_store.get(session_id)
     # Chỉ cache câu hỏi KHÔNG phụ thuộc ngữ cảnh (lượt đầu của phiên). Khi đã có
@@ -182,8 +182,9 @@ def answer(question: str, session_id: str) -> dict:
 
     latency_ms = int((time.time() - t0) * 1000)
     message_id = str(uuid.uuid4())
-    log_conversation(session_id, question, answer_text, sources, latency_ms, message_id)
-    notify_message(session_id)
+    if not skip_log:
+        log_conversation(session_id, question, answer_text, sources, latency_ms, message_id)
+        notify_message(session_id)
     return {
         "message_id": message_id,
         "session_id": session_id,
@@ -206,7 +207,7 @@ async def init_retriever() -> None:
     await _get_retriever()
 
 
-async def answer_async(question: str, session_id: str | None = None) -> dict:
+async def answer_async(question: str, session_id: str | None = None, *, skip_log: bool = False) -> dict:
     """Async wrapper của answer() — chạy sync call trong thread pool."""
     sid = session_id or str(uuid.uuid4())
-    return await asyncio.to_thread(answer, question, sid)
+    return await asyncio.to_thread(answer, question, sid, skip_log=skip_log)
