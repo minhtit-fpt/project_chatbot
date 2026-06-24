@@ -20,18 +20,27 @@ _BULLET_STAR = re.compile(r"^\*\s+")
 _HOTLINE = re.compile(r"\bhotline\b", re.IGNORECASE)
 HOTLINE_MARKER = "{{HOTLINE}}"
 
-# Bọc URL trần thành thẻ <a> để FE render thành link bấm được.
+# Bọc URL thành thẻ <a> để FE render thành link bấm được.
 # LƯU Ý: chỉ có tác dụng nếu FE render mỗi dòng dưới dạng HTML. Nếu FE escape text
 # thuần thì thẻ sẽ hiện literal "<a href=...>" → khi đó phải xử lý ở FE.
-_URL = re.compile(r"https?://[^\s<]+")
+# Negative lookbehind (?<!href=") để không bọc lại URL đã nằm trong href của bước trước.
+_URL = re.compile(r'(?<!href=")https?://[^\s<]+')
+# Dòng "Xem chi tiết: <url>" → thẻ <a> với text là nhãn "Xem chi tiết" (ẩn URL trần).
+_DETAIL_LINK = re.compile(r"Xem chi tiết:\s*(https?://[^\s<]+)", re.IGNORECASE)
+
+
+def _anchor(url: str, text: str) -> str:
+    return f'<a href="{url}" target="_blank" rel="noopener noreferrer">{text}</a>'
 
 
 def _linkify(line: str) -> str:
-    return _URL.sub(
-        lambda m: f'<a href="{m.group(0)}" target="_blank" rel="noopener noreferrer">'
-                  f'{m.group(0)}</a>',
-        line,
-    )
+    """Bọc URL thành thẻ <a> cho FE render link bấm được.
+
+    - "Xem chi tiết: <url>" → <a href="url">Xem chi tiết</a> (text là nhãn, không lộ URL).
+    - URL trần khác → <a href="url">url</a> (text chính là URL).
+    """
+    line = _DETAIL_LINK.sub(lambda m: _anchor(m.group(1), "Xem chi tiết"), line)
+    return _URL.sub(lambda m: _anchor(m.group(0), m.group(0)), line)
 
 
 def _strip_markdown(line: str) -> str:
