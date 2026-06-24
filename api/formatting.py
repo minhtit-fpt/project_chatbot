@@ -20,6 +20,19 @@ _BULLET_STAR = re.compile(r"^\*\s+")
 _HOTLINE = re.compile(r"\bhotline\b", re.IGNORECASE)
 HOTLINE_MARKER = "{{HOTLINE}}"
 
+# Bọc URL trần thành thẻ <a> để FE render thành link bấm được.
+# LƯU Ý: chỉ có tác dụng nếu FE render mỗi dòng dưới dạng HTML. Nếu FE escape text
+# thuần thì thẻ sẽ hiện literal "<a href=...>" → khi đó phải xử lý ở FE.
+_URL = re.compile(r"https?://[^\s<]+")
+
+
+def _linkify(line: str) -> str:
+    return _URL.sub(
+        lambda m: f'<a href="{m.group(0)}" target="_blank" rel="noopener noreferrer">'
+                  f'{m.group(0)}</a>',
+        line,
+    )
+
 
 def _strip_markdown(line: str) -> str:
     line = _HEADING.sub("", line)
@@ -47,6 +60,7 @@ def format_answer_lines(text: str) -> list[str]:
         cleaned = _strip_markdown(raw_line)
         cleaned = _WHITESPACE_RUN.sub(" ", cleaned).strip()
         cleaned = _HOTLINE.sub(HOTLINE_MARKER, cleaned)
+        cleaned = _linkify(cleaned)
         if cleaned:
             lines.append(cleaned)
     return lines
