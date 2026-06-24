@@ -54,10 +54,13 @@ def test_prompt_brand_level_comparison_rule():
 
 
 def test_prompt_has_product_link_rule():
-    """Luật đính link sản phẩm phải còn (gồm dùng đúng link, không bịa)."""
-    assert "LINK SẢN PHẨM:" in SYSTEM_PROMPT
+    """Luật đính link sản phẩm: BẮT BUỘC khi đã giới thiệu sản phẩm cụ thể, link
+    lấy đúng từ product_link, không bịa, không gán nhầm."""
+    assert "LINK SẢN PHẨM (BẮT BUỘC" in SYSTEM_PROMPT
+    assert "BẮT BUỘC đính kèm link" in SYSTEM_PROMPT          # mandatory
+    assert "KHÔNG được bỏ sót link của bất kỳ sản phẩm nào" in SYSTEM_PROMPT
     assert "Xem chi tiết" in SYSTEM_PROMPT
-    assert "không gán nhầm link" in SYSTEM_PROMPT
+    assert "không gán nhầm link" in SYSTEM_PROMPT             # đúng nguồn product_link
 
 
 def test_build_prompt_injects_link_by_slug():

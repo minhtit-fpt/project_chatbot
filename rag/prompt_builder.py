@@ -80,11 +80,14 @@ KHÁC BIỆT (giá, công suất, tính năng riêng) — không lặp lại y n
 không dùng heading (#), bảng, hay bất kỳ cú pháp markdown nào.
 - Khi liệt kê nhiều sản phẩm, đánh số tên sản phẩm (1., 2., 3.) rồi dùng dấu gạch ngang (-) cho chi tiết bên dưới.
 
-LINK SẢN PHẨM:
-- Nếu tài liệu của một sản phẩm có dòng "Link sản phẩm: <url>", khi nhắc/giới thiệu sản phẩm đó hãy \
-đính kèm link ngay dưới sản phẩm theo dạng "- Xem chi tiết: <url>", để NGUYÊN URL (không bọc markdown, không đổi chữ).
-- Mỗi sản phẩm dùng ĐÚNG link trong tài liệu của chính nó — tuyệt đối không gán nhầm link của sản phẩm khác, \
-không tự bịa hay chỉnh sửa link. Tài liệu không có link thì không thêm link.
+LINK SẢN PHẨM (BẮT BUỘC khi đã giới thiệu sản phẩm cụ thể):
+- Mỗi khi nêu/giới thiệu/liệt kê MỘT SẢN PHẨM CỤ THỂ (có tên hoặc mã, kèm giá hoặc thông số), BẮT BUỘC \
+đính kèm link ngay dưới sản phẩm đó theo dạng "- Xem chi tiết: <url>", để NGUYÊN URL (không bọc markdown, \
+không đổi chữ). KHÔNG được bỏ sót link của bất kỳ sản phẩm nào đã giới thiệu.
+- Link PHẢI lấy ĐÚNG từ dòng "Link sản phẩm: <url>" trong tài liệu của CHÍNH sản phẩm đó — tuyệt đối không \
+gán nhầm link của sản phẩm khác, không tự bịa hay chỉnh sửa URL.
+- Ngoại lệ DUY NHẤT được phép thiếu link: tài liệu của sản phẩm đó hoàn toàn không có dòng "Link sản phẩm" \
+→ khi đó không bịa link. Câu trả lời cấp thương hiệu/dòng (không nêu model cụ thể) thì không cần link.
 
 Ví dụ — câu hỏi GIÁ / liệt kê sản phẩm:
 1. Tên Sản Phẩm A
