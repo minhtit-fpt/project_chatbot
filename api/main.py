@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 import config
-from api.formatting import format_answer_lines
+from api.formatting import format_answer_with_suggestions
 from logs.conversation_store import log_feedback
 from rag.chat_engine import answer_async, init_retriever
 from rag.retry import is_retryable
@@ -66,6 +66,14 @@ class ChatResponse(BaseModel):
     answer: list[str] = Field(
         ...,
         description="Câu trả lời — mỗi phần tử là MỘT dòng đã làm sạch khoảng trắng. FE tự xuống dòng/style.",
+    )
+    suggestions: list[str] = Field(
+        default=[],
+        description=(
+            "Câu hỏi gợi ý hỏi tiếp khi yêu cầu còn rộng (guided selling). Rỗng nếu câu "
+            "hỏi đã cụ thể. Hiện cũng đã được nhúng vào `answer` để FE cũ hiển thị; field "
+            "riêng này dành cho log/analytics và FE tương lai nâng cấp thành chip bấm được."
+        ),
     )
     latency_ms: int
     cached: bool = False
@@ -143,10 +151,15 @@ async def chat(request: ChatRequest) -> ChatResponse:
         # chi tiết đã được ghi server-side qua logger.exception.
         logger.exception("Lỗi không mong đợi: %s", exc)
         raise HTTPException(status_code=500, detail="Lỗi xử lý nội bộ, vui lòng thử lại sau.")
-    # answer (chuỗi nhiều dòng từ LLM) → mảng từng dòng đã làm sạch cho FE.
-    # Bản text đầy đủ vẫn được log ở DB (trong chat_engine.answer()).
-    # Tạo dict mới (không mutate `result`); key "sources" dư bị Pydantic bỏ qua.
-    payload = {**result, "answer": format_answer_lines(result["answer"])}
+    # answer (chuỗi nhiều dòng từ LLM) → mảng từng dòng đã làm sạch cho FE, nhúng
+    # luôn phần gợi ý hỏi tiếp (nếu có) để FE hiện tại hiển thị được ngay. `suggestions`
+    # cũng được trả riêng (từ `result`) cho log/analytics + FE tương lai làm chip.
+    # Bản answer sạch vẫn được log ở DB (trong chat_engine.answer()).
+    # Tạo dict mới (không mutate `result`); các key dư (sources…) bị Pydantic bỏ qua.
+    payload = {
+        **result,
+        "answer": format_answer_with_suggestions(result["answer"], result["suggestions"]),
+    }
     return ChatResponse(**payload)
 
 

@@ -14,6 +14,7 @@ from rag.prompt_builder import SYSTEM_PROMPT, build_prompt
 from rag.retry import call_with_retry, is_retryable
 from rag.history_store import SessionHistoryStore, SessionDocCache
 from rag.query_rewriter import plan_search_queries
+from rag.suggestions import join_answer_and_suggestions, split_answer_and_suggestions
 from logs.conversation_store import log_conversation
 from logs.auto_sync import notify_message
 
@@ -206,6 +207,7 @@ def answer(question: str, session_id: str, *, skip_log: bool = False) -> dict:
     if cached_entry is not None:
         answer_text = cached_entry["answer"]
         sources = cached_entry["sources"]
+        suggestions = cached_entry["suggestions"]
         cached = True
     else:
         retriever = get_retriever()
@@ -225,7 +227,10 @@ def answer(question: str, session_id: str, *, skip_log: bool = False) -> dict:
         )
 
         messages = build_prompt(question, context_docs)
-        answer_text = _generate_answer(messages, history)
+        raw_answer = _generate_answer(messages, history)
+        # Câu hỏi rộng → model xuất kèm phần gợi ý sau marker. Tách answer sạch
+        # (dùng cho FE/cache/log DB) khỏi danh sách câu gợi ý (field riêng).
+        answer_text, suggestions = split_answer_and_suggestions(raw_answer)
         sources = [
             {"title": d["title"], "path": d["path"], "score": round(d["score"], 4)}
             for d in context_docs
@@ -235,11 +240,18 @@ def answer(question: str, session_id: str, *, skip_log: bool = False) -> dict:
         # Lưu cache không kèm message_id — mỗi lần trả vẫn sinh message_id mới
         # và ghi log riêng để feedback ánh xạ đúng từng lượt hỏi.
         if use_cache:
-            _response_cache.set(cache_key, {"answer": answer_text, "sources": sources})
+            _response_cache.set(
+                cache_key,
+                {"answer": answer_text, "sources": sources, "suggestions": suggestions},
+            )
         cached = False
 
     # Ghi lượt vừa rồi vào lịch sử để các lượt sau trong cùng phiên có ngữ cảnh.
-    _history_store.append(session_id, question, answer_text)
+    # History giữ answer KÈM phần gợi ý (dạng có marker) để planner/model lượt sau
+    # thấy "Bot đã hỏi: phòng bao nhiêu m²?" → khép đúng vòng dẫn dắt khi khách trả lời.
+    _history_store.append(
+        session_id, question, join_answer_and_suggestions(answer_text, suggestions)
+    )
 
     latency_ms = int((time.time() - t0) * 1000)
     message_id = str(uuid.uuid4())
@@ -250,6 +262,7 @@ def answer(question: str, session_id: str, *, skip_log: bool = False) -> dict:
         "message_id": message_id,
         "session_id": session_id,
         "answer": answer_text,
+        "suggestions": suggestions,
         "sources": sources,
         "latency_ms": latency_ms,
         "cached": cached,

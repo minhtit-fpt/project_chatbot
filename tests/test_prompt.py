@@ -8,6 +8,7 @@ vô tình bỏ ràng buộc chống bịa hoặc các nguyên tắc linh hoạt,
 Không gọi API thật — chỉ kiểm tra nội dung chuỗi prompt. Việc xác minh hành vi model
 thật (Daikin vs Gree không bịa số liệu) làm thủ công qua `python3 test_chat.py`.
 """
+import config
 from rag.prompt_builder import SYSTEM_PROMPT
 
 
@@ -32,3 +33,11 @@ def test_prompt_has_flexible_principles():
 def test_prompt_keeps_plain_text_rule():
     """Bất biến GIỮ: trả lời plain-text, không markdown."""
     assert "KHÔNG dùng markdown" in SYSTEM_PROMPT
+
+
+def test_prompt_has_guided_selling_block():
+    """Khối gợi ý hỏi tiếp: marker + điều kiện CHỈ-KHI-RỘNG phải còn trong prompt."""
+    assert config.SUGGESTIONS_MARKER in SYSTEM_PROMPT          # marker để BE tách
+    assert "GỢI Ý HỎI TIẾP" in SYSTEM_PROMPT
+    assert "chỉ khi câu hỏi còn RỘNG" in SYSTEM_PROMPT         # điều kiện kích hoạt
+    assert "KHÔNG áp dụng khi khách đã hỏi cụ thể" in SYSTEM_PROMPT  # phản chứng
