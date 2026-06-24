@@ -24,11 +24,13 @@ CHAT_MODEL_CHAIN: list[str] = [m.strip() for m in _chain_raw.split(",") if m.str
 
 INDEX_PATH = Path(__file__).parent / "data" / "index.json"
 
-# Map { path-tương-đối-note .md -> URL trang sản phẩm trên dienmaythienphu.vn }.
-# Sinh bởi `python -m indexer.build_product_links` (dò sitemap, khớp slug = tên file).
-# Side-file path-key (KHÔNG ghi vào frontmatter để tránh watcher re-embed toàn bộ).
+# Map { slug sản phẩm -> URL trang sản phẩm trên dienmaythienphu.vn }.
+# Sinh bởi `python -m indexer.build_product_links` (lấy thẳng từ WP API, không đọc vault).
+# Slug = tên file note (stem) → prompt_builder tra link theo stem của doc["path"].
 PRODUCT_LINKS_PATH = Path(__file__).parent / "data" / "product_links.json"
-PRODUCT_SITEMAP_INDEX = "https://dienmaythienphu.vn/sitemap.xml"
+# Nguồn link: WP REST API của CMS (nơi vault được scrape) — `pathname` là link canonical.
+PRODUCT_API_URL = "https://cms.dienmaythienphu.vn/wp-json/v1/products"
+PRODUCT_SITE_BASE = "https://dienmaythienphu.vn"
 
 # Múi giờ ứng dụng — mặc định Việt Nam (UTC+7). Đổi qua biến môi trường APP_TIMEZONE.
 # Dùng ZoneInfo nên độc lập với timezone của container/host (container Docker mặc định UTC).
