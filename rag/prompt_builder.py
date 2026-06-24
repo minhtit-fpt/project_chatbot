@@ -1,4 +1,27 @@
+import json
+
 import config
+
+# Cache module-level cho map { note-path -> URL sản phẩm } (side-file).
+_product_links: dict[str, str] | None = None
+
+
+def _load_product_links() -> dict[str, str]:
+    """Đọc map link từ `config.PRODUCT_LINKS_PATH` (cache, đọc 1 lần).
+
+    Thiếu file hoặc JSON lỗi → trả {} (bot vẫn trả lời bình thường, chỉ thiếu link).
+    Sinh map bằng `python -m indexer.build_product_links`.
+    """
+    global _product_links
+    if _product_links is None:
+        try:
+            _product_links = json.loads(
+                config.PRODUCT_LINKS_PATH.read_text(encoding="utf-8")
+            )
+        except (FileNotFoundError, json.JSONDecodeError):
+            _product_links = {}
+    return _product_links
+
 
 SYSTEM_PROMPT = """\
 Bạn là trợ lý tư vấn của Điện Máy Thiên Phú — cửa hàng điện máy gia dụng uy tín. \
@@ -57,13 +80,21 @@ KHÁC BIỆT (giá, công suất, tính năng riêng) — không lặp lại y n
 không dùng heading (#), bảng, hay bất kỳ cú pháp markdown nào.
 - Khi liệt kê nhiều sản phẩm, đánh số tên sản phẩm (1., 2., 3.) rồi dùng dấu gạch ngang (-) cho chi tiết bên dưới.
 
+LINK SẢN PHẨM:
+- Nếu tài liệu của một sản phẩm có dòng "Link sản phẩm: <url>", khi nhắc/giới thiệu sản phẩm đó hãy \
+đính kèm link ngay dưới sản phẩm theo dạng "- Xem chi tiết: <url>", để NGUYÊN URL (không bọc markdown, không đổi chữ).
+- Mỗi sản phẩm dùng ĐÚNG link trong tài liệu của chính nó — tuyệt đối không gán nhầm link của sản phẩm khác, \
+không tự bịa hay chỉnh sửa link. Tài liệu không có link thì không thêm link.
+
 Ví dụ — câu hỏi GIÁ / liệt kê sản phẩm:
 1. Tên Sản Phẩm A
 - Giá: 10.000.000 đ
 - Công suất: 12.000 BTU
+- Xem chi tiết: https://dienmaythienphu.vn/danh-muc/ten-san-pham-a
 2. Tên Sản Phẩm B
 - Giá: 15.000.000 đ
 - Công suất: 18.000 BTU
+- Xem chi tiết: https://dienmaythienphu.vn/danh-muc/ten-san-pham-b
 
 Ví dụ — câu hỏi tính năng/công nghệ cấp thương hiệu (KHÔNG kèm tên model, KHÔNG kèm giá):
 Các dòng tivi Samsung tại bên em nổi bật với:
@@ -85,11 +116,16 @@ Anh/chị ưu tiên tiêu chí nào để em tư vấn mẫu hợp nhất ạ?
 def build_prompt(question: str, context_docs: list[dict]) -> str:
     """Return the user message string for the Gemini generate_content API."""
     if context_docs:
+        links = _load_product_links()
         context_parts = []
         for i, doc in enumerate(context_docs, 1):
-            context_parts.append(
-                f"--- Tài liệu {i}: {doc['title']} ---\n{doc['content'][:3000]}"
-            )
+            block = f"--- Tài liệu {i}: {doc['title']} ---\n{doc['content'][:3000]}"
+            # Khóa map là slug = tên file note (stem). doc["path"] dạng "bep/x.md".
+            slug = doc.get("path", "").rsplit("/", 1)[-1].removesuffix(".md")
+            url = links.get(slug)
+            if url:
+                block += f"\nLink sản phẩm: {url}"
+            context_parts.append(block)
         context_block = "\n\n".join(context_parts)
         return f"Tài liệu tham khảo:\n\n{context_block}\n\nCâu hỏi của khách hàng: {question}"
     return f"Câu hỏi của khách hàng: {question}"
