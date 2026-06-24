@@ -8,6 +8,7 @@ vô tình bỏ ràng buộc chống bịa hoặc các nguyên tắc linh hoạt,
 Không gọi API thật — chỉ kiểm tra nội dung chuỗi prompt. Việc xác minh hành vi model
 thật (Daikin vs Gree không bịa số liệu) làm thủ công qua `python3 test_chat.py`.
 """
+import config
 from rag.prompt_builder import SYSTEM_PROMPT
 
 

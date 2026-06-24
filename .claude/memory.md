@@ -7,9 +7,9 @@
 
 ## Trạng thái hiện tại
 
-**Phase đang làm**: Phase 3 — Tối ưu
+**Phase đang làm**: Phase 3 — Tối ưu (guided-selling suggestions)
 **Bắt đầu**: 2026-04-21
-**Cập nhật lần cuối**: 2026-06-23
+**Cập nhật lần cuối**: 2026-06-24
 
 ---
 
@@ -98,6 +98,16 @@
   4. Config mới: `HISTORY_MAX_TURNS=10`, `HISTORY_TTL=1800`, `HISTORY_MAX_SESSIONS=1000`. Test: `tests/test_history.py` (12 test), tổng suite 19 pass, coverage history_store 98% / chat_engine 87%.
   - **Giới hạn còn lại (chưa làm — enhancement riêng)**: retrieval vẫn dùng nguyên văn câu hỏi hiện tại. Câu follow-up cụt như "giá bao nhiêu?" → model hiểu ngữ cảnh nhưng tài liệu RAG retrieve có thể lệch. Cần query-rewriting/condense câu hỏi theo history (Phase 3 sau).
   - **Lưu ý vận hành**: history nằm trong RAM của tiến trình API → restart app là mất; nếu sau này chạy nhiều worker/replica cần sticky-session theo `session_id` hoặc chuyển store sang Redis.
+
+- **2026-06-24**: Triển khai **gợi ý hỏi tiếp (guided selling)** theo `.claude/plan-guided-selling.md` (branch `feat/guided-selling-suggestions`). Câu hỏi RỘNG → bot trả 2–3 sản phẩm liên quan rồi gợi ý tối đa 3 câu hỏi về thông số quyết định mua hàng; câu CỤ THỂ → trả thẳng, không gợi ý. **Không thêm lần gọi LLM** — model tự xuất phần gợi ý sau marker `###GỢI_Ý###` ngay trong lần trả lời; BE tách. **Chỉ BE**, FE cũ vẫn hiển thị (gợi ý nhúng vào `answer`), đồng thời thêm field `suggestions: list[str]` cho log/FE tương lai (chip).
+  1. `config.py`: `MAX_SUGGESTIONS=3`, `SUGGESTIONS_MARKER="###GỢI_Ý###"`, `SUGGESTIONS_LEAD_IN`.
+  2. `rag/suggestions.py` (MỚI): `split_answer_and_suggestions` (parse fail-safe → `[]` khi lệch format, marker không lọt FE) + `join_answer_and_suggestions` (ghép lại cho history).
+  3. `api/formatting.py`: `format_answer_with_suggestions` — nhúng dòng dẫn + các dòng `- <gợi ý>` vào cuối answer.
+  4. `rag/chat_engine.py`: tách raw model → answer sạch (FE/cache/log DB) + `suggestions`; **history giữ answer KÈM gợi ý** để planner/model lượt sau thấy "Bot đã hỏi…"; cache lưu thêm `suggestions`.
+  5. `api/main.py`: `ChatResponse.suggestions` (default `[]`); payload `answer` dựng bằng `format_answer_with_suggestions`.
+  6. `rag/prompt_builder.py`: thêm khối "GỢI Ý HỎI TIẾP" (điều kiện CHỈ-KHI-RỘNG + 1 ví dụ có gợi ý + 1 phản chứng câu cụ thể).
+  - Tests: `tests/test_suggestions.py` (11), `tests/test_suggestions_engine.py` (4), guard `tests/test_prompt.py`. **Toàn suite 59 pass** (offline, không gọi API thật).
+  - **CÒN LẠI để verify thật**: chạy `python3 test_chat.py` với Gemini key — câu rộng "tư vấn điều hòa" có gợi ý; câu cụ thể không gợi ý; trả lời câu gợi ý ("phòng 20m2") → planner viết lại đúng ngữ cảnh. Rủi ro chính nằm ở prompt (over-trigger) → tinh chỉnh prompt nếu cần.
 
 ---
 
