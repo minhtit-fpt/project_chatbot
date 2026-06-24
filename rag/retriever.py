@@ -64,6 +64,91 @@ def _featured_boost(rec: dict) -> float:
     return 0.0
 
 
+def _price_text(content: str) -> str | None:
+    """Trích phần giá thô sau nhãn 'Giá:' trong nội dung note.
+
+    Trả None nếu note KHÔNG có dòng giá (note chính sách/hướng dẫn) → không phải
+    sản phẩm, không bị lọc tồn kho. Nhãn phải đúng là 'Giá' (sau khi bỏ dấu/markdown),
+    nên 'Giá trị sử dụng: ...' không bị nhầm là dòng giá.
+    """
+    for line in content.splitlines():
+        if ":" not in line:
+            continue
+        label, _, value = line.partition(":")
+        if _remove_diacritics(label).lower().strip(" -*\t") == "gia":
+            return value.strip()
+    return None
+
+
+def _is_unavailable(rec: dict) -> bool:
+    """True nếu note là SẢN PHẨM có giá 'Liên hệ'/rỗng = chưa bán hoặc hết hàng.
+
+    Đây là ràng buộc CỨNG ở tầng code: không để model tự ý chào bán sản phẩm
+    không có sẵn (rule 6 trong SYSTEM_PROMPT chỉ là lớp nhắc, không đáng tin).
+    """
+    price = _price_text(rec.get("content", ""))
+    if price is None:
+        return False
+    norm = _remove_diacritics(price).lower()
+    return norm == "" or "lien he" in norm
+
+
+def _model_code_tokens(text: str) -> set[str]:
+    """Các token 'mã model': vừa có chữ vừa có số, >=4 ký tự (vd 32t2, 50k820s,
+    ua43du7000kxxv). Loại trừ cỡ màn thuần số ('32', '43') và từ thường."""
+    tokens = re.findall(r"[a-z0-9]+", _remove_diacritics(text).lower())
+    return {
+        t for t in tokens
+        if len(t) >= 4 and any(c.isalpha() for c in t) and any(c.isdigit() for c in t)
+    }
+
+
+def _query_targets_record(query: str, rec: dict) -> bool:
+    """True nếu khách hỏi ĐÍCH DANH sản phẩm: query chứa mã model trùng title/keywords.
+
+    Carve-out của rule 6: chỉ giữ lại sản phẩm 'Liên hệ' khi khách gọi đúng tên/mã
+    của nó (để model còn báo 'hiện chưa có sẵn'), không phải với câu hỏi chung chung.
+    """
+    q_codes = _model_code_tokens(query)
+    if not q_codes:
+        return False
+    kw_meta = rec.get("metadata", {}).get("keywords", []) or []
+    kw_str = " ".join(str(k) for k in kw_meta) if isinstance(kw_meta, list) else str(kw_meta)
+    target_codes = _model_code_tokens(
+        rec.get("title", "") + " " + rec.get("path", "") + " " + kw_str
+    )
+    return bool(q_codes & target_codes)
+
+
+def _select_results(
+    question: str,
+    candidates: list[tuple[float, int]],
+    records: list[dict],
+    top_k: int,
+) -> list[dict]:
+    """Dựng top-k kết quả, BỎ QUA sản phẩm giá 'Liên hệ' khi chọn note.
+
+    candidates: list (final_score, idx) ĐÃ sắp xếp giảm dần. Sản phẩm hết hàng bị
+    bỏ qua để nhường slot cho sản phẩm đang bán hạng dưới — TRỪ khi khách hỏi đích
+    danh mã model (giữ lại để báo chưa có sẵn). Note phi-sản-phẩm luôn được giữ.
+    """
+    results: list[dict] = []
+    for final_score, idx in candidates:
+        rec = records[idx]
+        if _is_unavailable(rec) and not _query_targets_record(question, rec):
+            continue
+        results.append({
+            "path": rec["path"],
+            "title": rec["title"],
+            "content": rec["content"],
+            "score": round(final_score, 4),
+            "metadata": rec["metadata"],
+        })
+        if len(results) >= top_k:
+            break
+    return results
+
+
 class Retriever:
     def __init__(self) -> None:
         self._records: list[dict] = []
@@ -111,17 +196,9 @@ class Retriever:
 
         candidates.sort(key=lambda x: x[0], reverse=True)
 
-        results = []
-        for final_score, idx in candidates[:top_k]:
-            rec = self._records[idx]
-            results.append({
-                "path": rec["path"],
-                "title": rec["title"],
-                "content": rec["content"],
-                "score": round(final_score, 4),
-                "metadata": rec["metadata"],
-            })
-        return results
+        # Lọc sản phẩm giá "Liên hệ" (chưa bán/hết hàng) NGAY KHI chọn note, để model
+        # không bao giờ thấy — không phụ thuộc model tuân thủ rule prompt.
+        return _select_results(question, candidates, self._records, top_k)
 
     def reload(self) -> None:
         self._load()
