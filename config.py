@@ -13,8 +13,13 @@ OBSIDIAN_VAULT_PATH = Path(os.environ["OBSIDIAN_VAULT_PATH"])
 EMBEDDING_MODEL = "gemini-embedding-2"
 CHAT_MODEL = "gemini-2.5-flash-lite"  # model mặc định
 
-# Chain models thử lần lượt khi retry — đọc từ .env, fallback về CHAT_MODEL
-_chain_raw = os.environ.get("CHAT_MODEL_CHAIN", CHAT_MODEL)
+# Chain 3 model thử lần lượt khi lỗi/rỗng — leo thang theo năng lực:
+#   1. flash-lite : nhanh/rẻ nhất, xử lý phần lớn câu FAQ (mặc định).
+#   2. flash      : mục tiêu production, mạnh hơn khi lite lỗi/bị chặn.
+#   3. pro        : mạnh nhất, lưới an toàn cuối cho câu phức tạp.
+# Đọc từ .env (CHAT_MODEL_CHAIN, phân tách bằng dấu phẩy) — override được default này.
+_DEFAULT_CHAT_MODEL_CHAIN = "gemini-2.5-flash-lite,gemini-2.5-flash,gemini-2.5-pro"
+_chain_raw = os.environ.get("CHAT_MODEL_CHAIN", _DEFAULT_CHAT_MODEL_CHAIN)
 CHAT_MODEL_CHAIN: list[str] = [m.strip() for m in _chain_raw.split(",") if m.strip()]
 
 INDEX_PATH = Path(__file__).parent / "data" / "index.json"
