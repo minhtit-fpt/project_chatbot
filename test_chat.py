@@ -34,6 +34,11 @@ def main() -> None:
 
         # Thông tin debug local — KHÔNG nằm trong response gửi cho client thật.
         sources = ", ".join(s["title"] for s in result["sources"])
+        # Các truy vấn đã lập kế hoạch (follow-up viết lại / câu so sánh tách nhiều
+        # truy vấn) — để soi retrieval. Lượt thường giữ nguyên câu hỏi nên bỏ qua.
+        queries = result.get("search_queries") or []
+        if queries and queries != [question]:
+            print(f"[debug] Truy vấn: {queries}")
         print(f"[debug] Nguồn (chỉ lưu DB): {sources}")
         print(f"[debug] Latency: {result['latency_ms']}ms\n")
 

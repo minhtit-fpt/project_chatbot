@@ -11,7 +11,7 @@ GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 OBSIDIAN_VAULT_PATH = Path(os.environ["OBSIDIAN_VAULT_PATH"])
 
 EMBEDDING_MODEL = "gemini-embedding-2"
-CHAT_MODEL = "gemini-2.5-flash"  # model mặc định
+CHAT_MODEL = "gemini-2.5-flash-lite"  # model mặc định
 
 # Chain models thử lần lượt khi retry — đọc từ .env, fallback về CHAT_MODEL
 _chain_raw = os.environ.get("CHAT_MODEL_CHAIN", CHAT_MODEL)
@@ -65,6 +65,19 @@ RESPONSE_CACHE_MAX_SIZE = 256   # số câu hỏi tối đa được cache
 HISTORY_MAX_TURNS = 20          # số cặp Q&A gần nhất gửi lại cho model mỗi lượt
 HISTORY_TTL = 1800             # seconds (30 phút) — session idle quá lâu thì quên
 HISTORY_MAX_SESSIONS = 1000    # trần số session giữ trong RAM (chống rò bộ nhớ)
+
+# Lập kế hoạch truy vấn (retrieval query planner) — gộp viết-lại + đa-truy-vấn.
+# Hai lỗi retrieval mà planner xử lý:
+#   1. Câu follow-up cụt/sai chính tả/tham chiếu ngầm ("công nghệ loại bạn vừa giới thiệu")
+#      nếu embed nguyên văn sẽ kéo nhầm tài liệu → viết lại thành 1 query độc lập.
+#   2. Câu SO SÁNH đa thực thể ("so sánh Daikin và Gree") chỉ một embedding bị hãng phổ
+#      biến lấn át → tách mỗi thực thể 1 query rồi merge cân bằng.
+# Cổng gọi LLM giữ latency câu thường: chỉ gọi planner khi follow-up hoặc lượt đầu có ý so sánh.
+QUERY_REWRITE_MODEL = "gemini-2.5-flash"   # model nhanh/rẻ cho planner (không dùng lite)
+QUERY_REWRITE_HISTORY_TURNS = 4            # số lượt gần nhất đưa vào prompt planner
+QUERY_REWRITE_ANSWER_MAXLEN = 1200         # cắt bớt câu trả lời dài trong history
+MAX_SUBQUERIES = 3                         # trần số truy vấn con planner được sinh
+MAX_CONTEXT_DOCS = 8                       # trần số tài liệu sau khi merge đa-query + carry-forward
 
 EXCLUDE_PATTERNS = [
     "Daily Notes",

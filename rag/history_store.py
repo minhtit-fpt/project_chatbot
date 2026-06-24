@@ -79,3 +79,58 @@ class SessionHistoryStore:
             del self._store[sid]
         while len(self._store) > self._max_sessions:
             self._store.popitem(last=False)  # bỏ session cũ nhất (LRU)
+
+
+class SessionDocCache:
+    """Lưu danh sách tài liệu RAG của lượt gần nhất theo từng session.
+
+    Phục vụ context-aware retrieval: câu follow-up ("công nghệ của các model bạn
+    vừa giới thiệu") tái dùng tài liệu lượt trước làm lưới an toàn, thay vì chỉ
+    retrieve lại từ đầu rồi có thể kéo nhầm tài liệu. Cùng đặc tính TTL + LRU như
+    SessionHistoryStore; mỗi giá trị là list các doc dict (coi như chỉ-đọc).
+    """
+
+    def __init__(
+        self,
+        ttl: float,
+        max_sessions: int,
+        time_func: Callable[[], float] = time.time,
+    ) -> None:
+        # session_id -> (danh sách doc, timestamp cập nhật cuối)
+        self._store: OrderedDict[str, tuple[list[dict], float]] = OrderedDict()
+        self._ttl = ttl
+        self._max_sessions = max_sessions
+        self._now = time_func
+        self._lock = threading.Lock()
+
+    def get(self, session_id: str) -> list[dict]:
+        """Trả tài liệu lượt gần nhất của session; rỗng nếu chưa có hoặc hết hạn."""
+        with self._lock:
+            entry = self._store.get(session_id)
+            if entry is None:
+                return []
+            docs, updated_at = entry
+            if self._now() - updated_at > self._ttl:
+                del self._store[session_id]
+                return []
+            self._store.move_to_end(session_id)
+            return list(docs)  # bản sao list (doc dict coi như chỉ-đọc, không mutate)
+
+    def set(self, session_id: str, docs: list[dict]) -> None:
+        """Ghi đè tài liệu lượt gần nhất cho session."""
+        with self._lock:
+            now = self._now()
+            self._store[session_id] = (list(docs), now)
+            self._store.move_to_end(session_id)
+            self._evict_locked(now)
+
+    def _evict_locked(self, now: float) -> None:
+        """Dọn session hết hạn + chặn trần số session. Gọi khi đang giữ lock."""
+        expired = [
+            sid for sid, (_, updated_at) in self._store.items()
+            if now - updated_at > self._ttl
+        ]
+        for sid in expired:
+            del self._store[sid]
+        while len(self._store) > self._max_sessions:
+            self._store.popitem(last=False)  # bỏ session cũ nhất (LRU)

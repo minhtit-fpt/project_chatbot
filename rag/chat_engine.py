@@ -12,7 +12,8 @@ import config
 from rag.retriever import Retriever
 from rag.prompt_builder import SYSTEM_PROMPT, build_prompt
 from rag.retry import call_with_retry, is_retryable
-from rag.history_store import SessionHistoryStore
+from rag.history_store import SessionHistoryStore, SessionDocCache
+from rag.query_rewriter import plan_search_queries
 from logs.conversation_store import log_conversation
 from logs.auto_sync import notify_message
 
@@ -74,6 +75,47 @@ _history_store = SessionHistoryStore(
     ttl=config.HISTORY_TTL,
     max_sessions=config.HISTORY_MAX_SESSIONS,
 )
+
+# Tài liệu RAG của lượt gần nhất per-session — để câu follow-up tái dùng làm lưới
+# an toàn (cùng vòng đời TTL/LRU như history).
+_doc_cache = SessionDocCache(
+    ttl=config.HISTORY_TTL,
+    max_sessions=config.HISTORY_MAX_SESSIONS,
+)
+
+
+def _merge_query_results(
+    result_lists: list[list[dict]], prev_docs: list[dict], limit: int
+) -> list[dict]:
+    """Gộp kết quả nhiều truy vấn theo round-robin (cân bằng các hãng), rồi carry-forward.
+
+    Interleave round-robin: hạng 0 của mọi truy vấn → hạng 1 của mọi truy vấn → … để
+    không truy vấn nào (hãng phổ biến) lấn át slot. Khử trùng theo ``path``. Sau đó nối
+    tài liệu lượt trước (``prev_docs``) làm lưới an toàn cho câu follow-up tham chiếu
+    ngầm, lấp tới ``limit``.
+
+    Trường hợp một truy vấn (câu thường) → suy biến về danh sách top-k của truy vấn đó.
+    """
+    merged: list[dict] = []
+    seen: set[str] = set()
+
+    def _add(doc: dict) -> bool:
+        """Thêm doc nếu chưa thấy & còn chỗ. Trả True nếu đã đạt limit (báo dừng)."""
+        path = doc.get("path")
+        if path not in seen:
+            seen.add(path)
+            merged.append(doc)
+        return len(merged) >= limit
+
+    max_len = max((len(lst) for lst in result_lists), default=0)
+    for rank in range(max_len):
+        for lst in result_lists:
+            if rank < len(lst) and _add(lst[rank]):
+                return merged
+    for doc in prev_docs:
+        if _add(doc):
+            break
+    return merged
 
 
 def _build_contents(current_prompt: str, history: list[dict]) -> list[types.Content]:
@@ -158,19 +200,38 @@ def answer(question: str, session_id: str, *, skip_log: bool = False) -> dict:
     cache_key = question.strip().lower()
     cached_entry = _response_cache.get(cache_key) if use_cache else None
 
+    # Các truy vấn đã lập kế hoạch (debug) — None ở lượt cache (không retrieve lại).
+    search_queries: list[str] | None = None
+
     if cached_entry is not None:
         answer_text = cached_entry["answer"]
         sources = cached_entry["sources"]
         cached = True
     else:
         retriever = get_retriever()
-        context_docs = retriever.search(question)
+        # Lập kế hoạch truy vấn cho retrieval: follow-up → viết lại 1 query sạch;
+        # câu SO SÁNH → tách mỗi thực thể 1 query; câu thường lượt đầu → giữ nguyên
+        # (không tốn LLM-call). Câu hỏi gốc vẫn dùng để dựng prompt (model trả lời
+        # đúng câu khách hỏi, chỉ retrieval đổi query).
+        search_queries = plan_search_queries(
+            question, history, client=_client, model=config.QUERY_REWRITE_MODEL
+        )
+        result_lists = [retriever.search(q) for q in search_queries]
+        # Carry-forward tài liệu lượt trước CHỈ cho follow-up (lưới an toàn cho câu
+        # tham chiếu ngầm); lượt đầu không có gì để carry.
+        prev_docs = _doc_cache.get(session_id) if history else []
+        context_docs = _merge_query_results(
+            result_lists, prev_docs, config.MAX_CONTEXT_DOCS
+        )
+
         messages = build_prompt(question, context_docs)
         answer_text = _generate_answer(messages, history)
         sources = [
             {"title": d["title"], "path": d["path"], "score": round(d["score"], 4)}
             for d in context_docs
         ]
+        # Lưu tài liệu lượt này để câu follow-up sau tái dùng làm lưới an toàn.
+        _doc_cache.set(session_id, context_docs)
         # Lưu cache không kèm message_id — mỗi lần trả vẫn sinh message_id mới
         # và ghi log riêng để feedback ánh xạ đúng từng lượt hỏi.
         if use_cache:
@@ -192,6 +253,7 @@ def answer(question: str, session_id: str, *, skip_log: bool = False) -> dict:
         "sources": sources,
         "latency_ms": latency_ms,
         "cached": cached,
+        "search_queries": search_queries,
     }
 
 
