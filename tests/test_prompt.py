@@ -35,9 +35,18 @@ def test_prompt_keeps_plain_text_rule():
     assert "KHÔNG dùng markdown" in SYSTEM_PROMPT
 
 
-def test_prompt_has_guided_selling_block():
-    """Khối gợi ý hỏi tiếp: marker + điều kiện CHỈ-KHI-RỘNG phải còn trong prompt."""
-    assert config.SUGGESTIONS_MARKER in SYSTEM_PROMPT          # marker để BE tách
-    assert "GỢI Ý HỎI TIẾP" in SYSTEM_PROMPT
-    assert "chỉ khi câu hỏi còn RỘNG" in SYSTEM_PROMPT         # điều kiện kích hoạt
-    assert "KHÔNG áp dụng khi khách đã hỏi cụ thể" in SYSTEM_PROMPT  # phản chứng
+def test_prompt_brand_level_feature_rule():
+    """Câu hỏi tính năng/công nghệ cấp thương hiệu → chỉ nêu đặc điểm chung, không
+    liệt kê từng model. Khoá cả rule lẫn ví dụ minh hoạ (ví dụ điều khiển hành vi
+    model mạnh hơn câu lệnh, nên phải còn ví dụ brand-level không kèm model/giá)."""
+    assert "cấp THƯƠNG HIỆU hoặc DÒNG/LOẠI nói chung" in SYSTEM_PROMPT
+    assert "KHÔNG liệt kê từng sản phẩm/mã rồi kể tính năng từng cái" in SYSTEM_PROMPT
+    assert "KHÔNG kèm tên model, KHÔNG kèm giá" in SYSTEM_PROMPT
+
+
+def test_prompt_brand_level_comparison_rule():
+    """So sánh hai thương hiệu/dòng nói chung → so ở cấp tổng quát, không đặt từng
+    model rời kèm giá/specs cạnh nhau. Khoá cả rule lẫn ví dụ minh hoạ."""
+    assert "So sánh hai THƯƠNG HIỆU hoặc hai DÒNG/LOẠI nói chung" in SYSTEM_PROMPT
+    assert "KHÔNG liệt kê từng model rời kèm giá/specs đặt cạnh nhau" in SYSTEM_PROMPT
+    assert "so sánh hai thương hiệu/dòng (TỔNG QUÁT" in SYSTEM_PROMPT
