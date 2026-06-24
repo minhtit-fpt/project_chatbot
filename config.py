@@ -84,6 +84,12 @@ QUERY_REWRITE_ANSWER_MAXLEN = 1200         # cắt bớt câu trả lời dài t
 MAX_SUBQUERIES = 3                         # trần số truy vấn con planner được sinh
 MAX_CONTEXT_DOCS = 8                       # trần số tài liệu sau khi merge đa-query + carry-forward
 
+# Gợi ý hỏi tiếp (guided selling) — model TỰ xuất phần gợi ý sau marker khi câu hỏi
+# còn rộng/mơ hồ (không thêm lần gọi LLM riêng). BE tách marker → answer sạch + list gợi ý.
+MAX_SUGGESTIONS = 3
+SUGGESTIONS_MARKER = "###GỢI_Ý###"
+SUGGESTIONS_LEAD_IN = "Để tư vấn sát hơn, anh/chị cho em hỏi thêm:"
+
 EXCLUDE_PATTERNS = [
     "Daily Notes",
     "Templates",

@@ -8,7 +8,7 @@ Usage: python test_chat.py
 """
 import uuid
 
-from api.formatting import format_answer_lines
+from api.formatting import format_answer_with_suggestions
 from rag.chat_engine import answer
 
 print("Chatbot FAQ — gõ 'quit' để thoát\n")
@@ -27,9 +27,10 @@ def main() -> None:
         result = answer(question, session_id, skip_log=True)
         asked += 1
 
-        # answer hiển thị đúng như client/FE nhận: mảng từng dòng đã làm sạch.
+        # answer hiển thị đúng như client/FE nhận: mảng từng dòng đã làm sạch,
+        # kèm phần gợi ý hỏi tiếp (nếu có) như payload thật.
         print("\nBot:")
-        for line in format_answer_lines(result["answer"]):
+        for line in format_answer_with_suggestions(result["answer"], result["suggestions"]):
             print(f"  {line}")
 
         # Thông tin debug local — KHÔNG nằm trong response gửi cho client thật.
@@ -40,6 +41,9 @@ def main() -> None:
         if queries and queries != [question]:
             print(f"[debug] Truy vấn: {queries}")
         print(f"[debug] Nguồn (chỉ lưu DB): {sources}")
+        # Gợi ý hỏi tiếp (guided selling) — field riêng cho log/FE; rỗng nếu câu cụ thể.
+        if result.get("suggestions"):
+            print(f"[debug] Gợi ý: {result['suggestions']}")
         print(f"[debug] Latency: {result['latency_ms']}ms\n")
 
 

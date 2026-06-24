@@ -6,6 +6,8 @@ FE tự xuống dòng và style từng dòng — bản text đầy đủ vẫn �
 """
 import re
 
+import config
+
 _WHITESPACE_RUN = re.compile(r"\s+")
 
 _BOLD = re.compile(r"\*{1,3}(.+?)\*{1,3}")
@@ -47,4 +49,22 @@ def format_answer_lines(text: str) -> list[str]:
         cleaned = _HOTLINE.sub(HOTLINE_MARKER, cleaned)
         if cleaned:
             lines.append(cleaned)
+    return lines
+
+
+def format_answer_with_suggestions(answer: str, suggestions: list[str]) -> list[str]:
+    """Như ``format_answer_lines`` nhưng nối thêm phần gợi ý hỏi tiếp (nếu có).
+
+    Khi ``suggestions`` không rỗng → thêm 1 dòng dẫn ``config.SUGGESTIONS_LEAD_IN``
+    rồi mỗi gợi ý thành một dòng ``- <gợi ý>`` (đã làm sạch khoảng trắng). Không có
+    gợi ý → trả đúng các dòng answer, không thêm dòng dẫn thừa.
+    """
+    lines = format_answer_lines(answer)
+    if not suggestions:
+        return lines
+    lines.append(config.SUGGESTIONS_LEAD_IN)
+    for suggestion in suggestions:
+        cleaned = _WHITESPACE_RUN.sub(" ", suggestion).strip()
+        if cleaned:
+            lines.append(f"- {cleaned}")
     return lines
