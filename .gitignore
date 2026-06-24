@@ -3,6 +3,7 @@
 
 # Data & Index (keep placeholder, ignore generated files)
 data/index.json
+data/product_links.json
 logs/conversations.db
 
 # Python
