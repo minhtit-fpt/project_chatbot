@@ -13,6 +13,7 @@ from rag.retriever import Retriever
 from rag.prompt_builder import SYSTEM_PROMPT, build_prompt
 from rag.retry import call_with_retry, is_retryable
 from rag.history_store import SessionHistoryStore, SessionDocCache
+from rag.followup import is_referential_followup
 from rag.query_rewriter import plan_search_queries
 from rag.suggestions import join_answer_and_suggestions, split_answer_and_suggestions
 from logs.conversation_store import log_conversation
@@ -197,7 +198,13 @@ def answer(question: str, session_id: str, *, skip_log: bool = False) -> dict:
     # Chỉ cache câu hỏi KHÔNG phụ thuộc ngữ cảnh (lượt đầu của phiên). Khi đã có
     # lịch sử, câu trả lời phụ thuộc các lượt trước → không đọc/không ghi cache chung;
     # nếu không, lượt sau cùng câu chữ sẽ bị trả nhầm đáp án đã cache của phiên khác.
-    use_cache = not history
+    #
+    # Defense-in-depth: nếu history rỗng NHƯNG câu hỏi là follow-up phụ thuộc ngữ cảnh
+    # ("thế nên mua loại nào", "giá bao nhiêu") — vd FE không giữ session_id nên mỗi
+    # request là session mới — vẫn KHÔNG dùng cache chung. Cache đánh khoá theo nguyên
+    # văn câu hỏi cho mọi session, nên câu cụt này dễ trúng đáp án nhiễm chéo phiên
+    # (vd máy giặt). Bỏ qua cache → retrieve lại thay vì trả nhầm hẳn nhóm sản phẩm.
+    use_cache = not history and not is_referential_followup(question)
     cache_key = question.strip().lower()
     cached_entry = _response_cache.get(cache_key) if use_cache else None
 
