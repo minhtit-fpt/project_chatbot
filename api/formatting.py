@@ -13,6 +13,10 @@ _WHITESPACE_RUN = re.compile(r"\s+")
 _BOLD = re.compile(r"\*{1,3}(.+?)\*{1,3}")
 _HEADING = re.compile(r"^#{1,6}\s+")
 _BULLET_STAR = re.compile(r"^\*\s+")
+# Dấu * lẻ còn sót khi model mở **đậm** ở dòng này nhưng đóng ở dòng khác — split
+# theo "\n" nên _BOLD (khớp cặp trong 1 dòng) không bắt được. Xoá sau khi đã đổi
+# bullet "* " thành "- " để không ăn nhầm dấu bullet.
+_STRAY_STAR = re.compile(r"\*+")
 
 # FE sẽ thay marker này bằng số hotline thật (link tel:). Backend chỉ phát marker,
 # không nhúng số cứng — đổi số chỉ cần sửa ở FE, không phải deploy lại bot.
@@ -50,7 +54,8 @@ def _linkify(line: str) -> str:
 def _strip_markdown(line: str) -> str:
     line = _HEADING.sub("", line)
     line = _BOLD.sub(r"\1", line)
-    line = _BULLET_STAR.sub("- ", line)
+    line = _BULLET_STAR.sub("- ", line)  # bullet "* " → "- " trước
+    line = _STRAY_STAR.sub("", line)     # rồi mới xoá * lẻ còn sót (markdown hở)
     return line
 
 

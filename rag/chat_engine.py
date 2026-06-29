@@ -21,7 +21,13 @@ from logs.auto_sync import notify_message
 
 logger = logging.getLogger(__name__)
 
-_client = genai.Client(api_key=config.GEMINI_API_KEY)
+# http_options.timeout tính bằng mili-giây — chặn trần mỗi call để 1 lần gọi bị
+# treo (rate-limit, mạng nghẽn) không làm request đợi vô hạn. Trước đây
+# config.GEMINI_TIMEOUT khai báo nhưng không được dùng → call không có timeout.
+_client = genai.Client(
+    api_key=config.GEMINI_API_KEY,
+    http_options=types.HttpOptions(timeout=int(config.GEMINI_TIMEOUT * 1000)),
+)
 _retriever: Retriever | None = None
 _retriever_lock = threading.Lock()  # sync lock — get_retriever() là hàm đồng bộ
 
