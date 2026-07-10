@@ -32,6 +32,10 @@ PRODUCT_LINKS_PATH = Path(__file__).parent / "data" / "product_links.json"
 PRODUCT_API_URL = "https://cms.dienmaythienphu.vn/wp-json/v1/products"
 PRODUCT_SITE_BASE = "https://dienmaythienphu.vn"
 
+# Số hotline thật (đã có trong note chinh-sach/Lien-he.md). Backend thay chữ
+# "hotline" trong câu trả lời bằng số này (link tel:) thay vì marker cho FE.
+HOTLINE_NUMBER = os.environ.get("HOTLINE_NUMBER", "0983616996")
+
 # Múi giờ ứng dụng — mặc định Việt Nam (UTC+7). Đổi qua biến môi trường APP_TIMEZONE.
 # Dùng ZoneInfo nên độc lập với timezone của container/host (container Docker mặc định UTC).
 # Cần gói `tzdata` trong requirements.txt để ZoneInfo chạy được trên image python slim.

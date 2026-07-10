@@ -18,11 +18,14 @@ _BULLET_STAR = re.compile(r"^\*\s+")
 # bullet "* " thành "- " để không ăn nhầm dấu bullet.
 _STRAY_STAR = re.compile(r"\*+")
 
-# FE sẽ thay marker này bằng số hotline thật (link tel:). Backend chỉ phát marker,
-# không nhúng số cứng — đổi số chỉ cần sửa ở FE, không phải deploy lại bot.
+# Backend thay chữ "hotline" bằng số thật (link tel:), lấy từ config.HOTLINE_NUMBER.
+# Đổi số qua biến môi trường HOTLINE_NUMBER, không cần sửa FE.
 # Khớp "hotline" không phân biệt hoa thường, có word boundary để không đụng từ khác.
 _HOTLINE = re.compile(r"\bhotline\b", re.IGNORECASE)
-HOTLINE_MARKER = "{{HOTLINE}}"
+# tel: bỏ khoảng trắng để bấm gọi được; text hiển thị giữ nguyên số như trong config.
+_HOTLINE_LINK = (
+    f'<a href="tel:{config.HOTLINE_NUMBER.replace(" ", "")}">{config.HOTLINE_NUMBER}</a>'
+)
 
 # Text hiển thị cho MỌI link — luôn ngắn gọn "Tại đây", không bao giờ lộ URL dài.
 LINK_TEXT = "Tại đây"
@@ -64,20 +67,18 @@ def format_answer_lines(text: str) -> list[str]:
 
     - Strip markdown (bold, heading, bullet *).
     - Bỏ khoảng trắng thừa và dòng trống.
-    - Thay mọi chữ "hotline" bằng marker ``{{HOTLINE}}`` để FE render thành số/link.
+    - Thay mọi chữ "hotline" bằng số thật (link tel:) từ ``config.HOTLINE_NUMBER``.
 
     Ví dụ::
 
         >>> format_answer_lines("**Chào bạn:**\\n\\n* Giá: 5.000.000 đ")
         ['Chào bạn:', '- Giá: 5.000.000 đ']
-        >>> format_answer_lines("Liên hệ Hotline để được hỗ trợ")
-        ['Liên hệ {{HOTLINE}} để được hỗ trợ']
     """
     lines: list[str] = []
     for raw_line in text.split("\n"):
         cleaned = _strip_markdown(raw_line)
         cleaned = _WHITESPACE_RUN.sub(" ", cleaned).strip()
-        cleaned = _HOTLINE.sub(HOTLINE_MARKER, cleaned)
+        cleaned = _HOTLINE.sub(_HOTLINE_LINK, cleaned)
         cleaned = _linkify(cleaned)
         if cleaned:
             lines.append(cleaned)
