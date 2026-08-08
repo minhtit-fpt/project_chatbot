@@ -43,7 +43,7 @@ Top 5 notes → Gemini 2.5 Flash → Trả lời + citations
 | Vector store | file `index.json` (in-memory cosine similarity) |
 | Data source | Obsidian Vault (>1000 notes, local) |
 | Deployment | Local — máy công ty |
-| Logging | MySQL (`chatbot_logs.conversations`, port 3307) |
+| Logging | MySQL (`chatbot_logs.conversations`, MariaDB host port 3306) |
 
 ---
 
@@ -84,7 +84,7 @@ project_chatbot/
     ├── conversation_store.py   # Ghi Q&A vào JSONL local (không cần MySQL); get_write_lock()
     ├── auto_sync.py            # Debounce timer per session → trigger sync
     ├── sync_to_mysql.py        # Sync JSONL → MySQL (chỉ module này cần DB credentials)
-    ├── mysql_logger.py         # MySQL connection helper (dùng bởi sync_to_mysql)
+    ├── mysql_logger.py         # DEAD CODE — không module nào import; schema lệch với sync_to_mysql
     └── conversations.jsonl     # Buffer local Q&A (gitignore)
 ```
 
@@ -110,7 +110,13 @@ project_chatbot/
 - Chatbot ghi Q&A vào `logs/conversations.jsonl` (local, không cần MySQL credentials)
 - `auto_sync.py` debounce 180s per `session_id` → khi session idle → gọi `sync_to_mysql.py`
 - Chỉ `sync_to_mysql.py` cần MySQL credentials → giảm attack surface
-- MySQL chạy port **3307** (không phải 3306), database `chatbot_logs`
+- DB đích thực tế là **MariaDB của host, port 3306** (`MYSQL_HOST=host.docker.internal`,
+  `MYSQL_PORT=3306` trong compose), database `chatbot_logs`. Container
+  `project_chatbot-mysql-1` map ra port 3307 nhưng **không được dùng** (0 row) — đừng
+  debug nhầm chỗ; kiểm tra bằng `mariadb -e "SELECT COUNT(*) FROM chatbot_logs.conversations"`
+- Record `type="feedback"` trong JSONL **không** được sync sang MySQL (bảng chưa có cột
+  `message_id` để ánh xạ) — `_read_pending` cố tình lọc bỏ. Muốn đổ feedback vào DB phải
+  thêm cột `message_id` + migration, xem `logs/sync_to_mysql.py`
 - Mỗi cuộc trò chuyện có `session_id` UUID riêng — client giữ và gửi kèm mỗi request
 
 ### Bất biến: path-key của record index phải TƯƠNG ĐỐI so với vault root

@@ -46,30 +46,39 @@ _PER_MODEL_RETRIES = 2
 # ---------------------------------------------------------------------------
 
 class _TTLCache:
-    """OrderedDict-based LRU cache với TTL."""
+    """OrderedDict-based LRU cache với TTL — thread-safe.
+
+    Cần lock thật, không dựa vào GIL: ``answer()`` chạy đa thread qua
+    ``asyncio.to_thread``, mà get/set đều là CHUỖI thao tác (đọc → kiểm TTL → xoá).
+    Hai thread cùng gặp một key hết hạn sẽ cùng vào nhánh ``del`` → thread thứ hai
+    ném KeyError → khách nhận HTTP 500. Cùng pattern lock với SessionHistoryStore.
+    """
 
     def __init__(self, max_size: int, ttl: float) -> None:
         self._store: OrderedDict[str, tuple[dict, float]] = OrderedDict()
         self._max_size = max_size
         self._ttl = ttl
+        self._lock = threading.Lock()
 
     def get(self, key: str) -> dict | None:
-        entry = self._store.get(key)
-        if entry is None:
-            return None
-        value, ts = entry
-        if time.time() - ts > self._ttl:
-            del self._store[key]
-            return None
-        self._store.move_to_end(key)
-        return value
+        with self._lock:
+            entry = self._store.get(key)
+            if entry is None:
+                return None
+            value, ts = entry
+            if time.time() - ts > self._ttl:
+                del self._store[key]
+                return None
+            self._store.move_to_end(key)
+            return value
 
     def set(self, key: str, value: dict) -> None:
-        if key in self._store:
-            self._store.move_to_end(key)
-        self._store[key] = (value, time.time())
-        while len(self._store) > self._max_size:
-            self._store.popitem(last=False)
+        with self._lock:
+            if key in self._store:
+                self._store.move_to_end(key)
+            self._store[key] = (value, time.time())
+            while len(self._store) > self._max_size:
+                self._store.popitem(last=False)
 
 
 _response_cache = _TTLCache(
