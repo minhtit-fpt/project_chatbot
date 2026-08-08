@@ -18,11 +18,6 @@ from mysql.connector import Error as MySQLError
 
 import config
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [sync] %(message)s",
-    datefmt="%H:%M:%S",
-)
 logger = logging.getLogger(__name__)
 
 _STORE_PATH = Path(__file__).parent / "conversations.jsonl"
@@ -188,6 +183,14 @@ def sync(dry_run: bool = False) -> None:
 
 
 if __name__ == "__main__":
+    # basicConfig CHỈ ở đây, không ở module level: auto_sync import module này trong
+    # tiến trình API, nên cấu hình ở module level sẽ chiếm root logger của cả app và
+    # dán nhãn "[sync]" lên mọi log (kể cả log retry Gemini). Chạy CLI thì vẫn có format riêng.
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [sync] %(message)s",
+        datefmt="%H:%M:%S",
+    )
     dry_run = "--dry-run" in sys.argv
     try:
         sync(dry_run=dry_run)

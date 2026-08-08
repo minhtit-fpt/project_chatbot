@@ -1,4 +1,5 @@
 import logging
+import time
 import uuid
 from contextlib import asynccontextmanager
 from typing import Literal
@@ -9,9 +10,14 @@ from pydantic import BaseModel, Field
 
 import config
 from api.formatting import format_answer_with_suggestions
-from logs.conversation_store import log_feedback
+from logs.conversation_store import log_error, log_feedback
 from rag.chat_engine import answer_async, init_retriever
 from rag.retry import is_retryable
+
+# App sở hữu cấu hình root logger, đặt NGAY khi import — trước khi module con nào kịp
+# gọi basicConfig (lần gọi thứ hai là no-op). Nếu không, log toàn app mang nhãn của
+# submodule tình cờ cấu hình trước; đây chính là lý do log retry Gemini từng hiện "[sync]".
+logging.basicConfig(level=config.LOG_LEVEL, format=config.LOG_FORMAT)
 
 logger = logging.getLogger(__name__)
 
@@ -127,12 +133,35 @@ async def new_session() -> SessionResponse:
 )
 async def chat(request: ChatRequest) -> ChatResponse:
     session_id = request.session_id or str(uuid.uuid4())
+    t0 = time.perf_counter()
+
+    def _log_failure(exc: Exception, status_code: int) -> None:
+        """Ghi request thất bại vào JSONL (type="error").
+
+        `log_conversation` chỉ chạy ở đường thành công, nên trước đây khách bị 503/500
+        không để lại dấu vết nào ngoài `docker logs` — không đếm được, mất khi recreate
+        container. `request.test` được tôn trọng y như đường thành công.
+        """
+        if request.test:
+            return
+        log_error(
+            session_id=session_id,
+            question=request.question,
+            error_type=type(exc).__name__,
+            detail=str(exc),
+            status_code=status_code,
+            latency_ms=int((time.perf_counter() - t0) * 1000),
+        )
+
     try:
         result = await answer_async(request.question, session_id, skip_log=request.test)
     except FileNotFoundError as exc:
+        logger.error("Index chưa sẵn sàng: %s", exc)
+        _log_failure(exc, 503)
         raise HTTPException(status_code=503, detail=str(exc))
     except RuntimeError as exc:
         logger.error("Gemini API không phản hồi: %s", exc)
+        _log_failure(exc, 503)
         raise HTTPException(
             status_code=503,
             detail="Dịch vụ AI tạm thời không khả dụng, vui lòng thử lại sau.",
@@ -143,13 +172,15 @@ async def chat(request: ChatRequest) -> ChatResponse:
         # nội bộ" thay vì thông báo bận tạm thời. Map lỗi retryable → 503.
         if is_retryable(exc):
             logger.warning("Gemini tạm thời quá tải: %s", exc)
+            _log_failure(exc, 503)
             raise HTTPException(
                 status_code=503,
                 detail="Dịch vụ AI đang bận, vui lòng thử lại sau giây lát.",
             )
         # Không nhét nội dung exception vào response (tránh rò chi tiết nội bộ);
-        # chi tiết đã được ghi server-side qua logger.exception.
+        # chi tiết đã được ghi server-side qua logger.exception + record type="error".
         logger.exception("Lỗi không mong đợi: %s", exc)
+        _log_failure(exc, 500)
         raise HTTPException(status_code=500, detail="Lỗi xử lý nội bộ, vui lòng thử lại sau.")
     # answer (chuỗi nhiều dòng từ LLM) → mảng từng dòng đã làm sạch cho FE, nhúng
     # luôn phần gợi ý hỏi tiếp (nếu có) để FE hiện tại hiển thị được ngay. `suggestions`

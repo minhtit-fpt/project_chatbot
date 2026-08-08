@@ -114,9 +114,26 @@ project_chatbot/
   `MYSQL_PORT=3306` trong compose), database `chatbot_logs`. Container
   `project_chatbot-mysql-1` map ra port 3307 nhưng **không được dùng** (0 row) — đừng
   debug nhầm chỗ; kiểm tra bằng `mariadb -e "SELECT COUNT(*) FROM chatbot_logs.conversations"`
-- Record `type="feedback"` trong JSONL **không** được sync sang MySQL (bảng chưa có cột
-  `message_id` để ánh xạ) — `_read_pending` cố tình lọc bỏ. Muốn đổ feedback vào DB phải
-  thêm cột `message_id` + migration, xem `logs/sync_to_mysql.py`
+- `logs/conversations.jsonl` chứa **3 loại record**, phân biệt bằng field `type`:
+  - `message` — Q&A thành công (`log_conversation`), loại DUY NHẤT được sync sang MySQL
+  - `feedback` — thumbs up/down (`log_feedback`)
+  - `error` — request `/chat` thất bại (`log_error`): `question`, `error_type`,
+    `detail` (≤1000 ký tự, thông điệp gốc upstream), `status_code`, `latency_ms`
+- `_read_pending` chỉ lấy `type="message"`; `feedback`/`error` cố tình bị lọc bỏ (bảng
+  `conversations` chưa có cột `message_id` để ánh xạ feedback, và chưa có bảng cho error).
+  **Bất biến**: record không phải `message` KHÔNG được rơi vào vòng insert — chúng thiếu
+  key `question`/`answer`, KeyError sẽ thoát `sync()` trước `commit()` và chặn sync vĩnh viễn.
+  Muốn đổ feedback vào DB phải thêm cột `message_id` + migration, xem `logs/sync_to_mysql.py`
+- Đếm lỗi theo ngày (không cần DB):
+  `jq -r 'select(.type=="error") | .timestamp[:10]' logs/conversations.jsonl | sort | uniq -c`
+
+### Logging: app sở hữu root logger
+- `api/main.py` gọi `logging.basicConfig(config.LOG_LEVEL, config.LOG_FORMAT)` ngay khi
+  import. Mức log đổi qua biến môi trường `LOG_LEVEL`.
+- **Đừng gọi `basicConfig` ở module level trong module con.** `logs/sync_to_mysql.py`
+  từng làm vậy → `auto_sync` import nó trong tiến trình API → chiếm root logger và dán
+  nhãn `[sync]` lên MỌI log (log retry Gemini cũng hiện `[sync]`). Nay `basicConfig` của
+  nó nằm trong khối `__main__`, chỉ áp dụng khi chạy CLI độc lập.
 - Mỗi cuộc trò chuyện có `session_id` UUID riêng — client giữ và gửi kèm mỗi request
 
 ### Bất biến: path-key của record index phải TƯƠNG ĐỐI so với vault root

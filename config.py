@@ -51,6 +51,13 @@ def now_local() -> datetime:
     """
     return datetime.now(TIMEZONE).replace(tzinfo=None)
 
+# Logging — app tự sở hữu cấu hình root logger (api/main.py gọi basicConfig lúc import).
+# Trước đây logs/sync_to_mysql.py gọi basicConfig ở module level, nên khi auto_sync
+# import nó thì MỌI log của app bị dán nhãn "[sync]" sai (log retry Gemini cũng hiện
+# "[sync]"). Đổi mức log qua biến môi trường LOG_LEVEL, không cần sửa code.
+LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
+LOG_FORMAT = "%(asctime)s %(levelname)s [%(name)s] %(message)s"
+
 # CORS — comma-separated origins, e.g. "https://example.com,https://shop.example.com"
 # Dùng "*" cho môi trường dev/local. Production nên set cụ thể.
 _origins_raw = os.environ.get("ALLOWED_ORIGINS", "*")

@@ -39,6 +39,24 @@ def _ensure_dir() -> None:
     _STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 
+def _append_record(record: dict, what: str) -> None:
+    """Ghi 1 record xuống cuối JSONL trong thread riêng — thread-safe, non-blocking.
+
+    Ghi log không bao giờ được làm hỏng request đang phục vụ khách, nên lỗi ghi chỉ
+    được cảnh báo chứ không ném lên. ``what`` chỉ dùng cho thông điệp cảnh báo.
+    """
+    def _write() -> None:
+        try:
+            _ensure_dir()
+            with _write_lock:
+                with _STORE_PATH.open("a", encoding="utf-8") as f:
+                    f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        except Exception as exc:
+            logger.warning("conversation_store %s write failed: %s", what, exc)
+
+    threading.Thread(target=_write, daemon=True).start()
+
+
 def log_conversation(
     session_id: str,
     question: str,
@@ -59,17 +77,7 @@ def log_conversation(
         "latency_ms": latency_ms,
         "synced": False,
     }
-
-    def _write() -> None:
-        try:
-            _ensure_dir()
-            with _write_lock:
-                with _STORE_PATH.open("a", encoding="utf-8") as f:
-                    f.write(json.dumps(record, ensure_ascii=False) + "\n")
-        except Exception as exc:
-            logger.warning("conversation_store write failed: %s", exc)
-
-    threading.Thread(target=_write, daemon=True).start()
+    _append_record(record, "message")
 
 
 def log_feedback(
@@ -88,17 +96,40 @@ def log_feedback(
         "comment": comment or "",
         "synced": False,
     }
+    _append_record(record, "feedback")
 
-    def _write() -> None:
-        try:
-            _ensure_dir()
-            with _write_lock:
-                with _STORE_PATH.open("a", encoding="utf-8") as f:
-                    f.write(json.dumps(record, ensure_ascii=False) + "\n")
-        except Exception as exc:
-            logger.warning("conversation_store feedback write failed: %s", exc)
 
-    threading.Thread(target=_write, daemon=True).start()
+def log_error(
+    session_id: str,
+    question: str,
+    error_type: str,
+    detail: str,
+    status_code: int,
+    latency_ms: int = 0,
+) -> None:
+    """Ghi 1 request /chat THẤT BẠI vào JSONL — thread-safe, non-blocking.
+
+    Vì sao cần: ``log_conversation`` chỉ chạy khi trả lời thành công, nên khách bị
+    503/500 trước đây không để lại dấu vết nào ngoài ``docker logs`` (mất khi recreate
+    container, không đếm được). Có record này mới trả lời được "hôm qua bao nhiêu khách
+    bị lỗi, hỏi câu gì".
+
+    ``detail`` là thông điệp gốc từ upstream (Gemini) — chỉ dùng nội bộ, KHÔNG trả về
+    cho khách. Record ``type="error"`` bị ``sync_to_mysql._read_pending`` bỏ qua nên
+    không vào bảng ``conversations``; đọc bằng grep/jq trên JSONL.
+    """
+    record = {
+        "type": "error",
+        "session_id": session_id,
+        "timestamp": config.now_local().isoformat(timespec="seconds"),
+        "question": question,
+        "error_type": error_type,
+        "detail": detail[:1000],  # chặn trần: traceback/payload upstream có thể rất dài
+        "status_code": status_code,
+        "latency_ms": latency_ms,
+        "synced": False,
+    }
+    _append_record(record, "error")
 
 
 def get_store_path() -> Path:
