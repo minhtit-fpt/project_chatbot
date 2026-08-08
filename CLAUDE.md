@@ -127,6 +127,22 @@ project_chatbot/
 - Đếm lỗi theo ngày (không cần DB):
   `jq -r 'select(.type=="error") | .timestamp[:10]' logs/conversations.jsonl | sort | uniq -c`
 
+### Bất biến: mọi đồng hồ trong app đều là UTC+7
+- `config.py` đặt `os.environ["TZ"]` + `time.tzset()` theo `APP_TIMEZONE` (mặc định
+  `Asia/Ho_Chi_Minh`) ngay khi import. Nhờ vậy **giờ local của tiến trình = giờ ghi record**.
+- Cần thiết vì container `python:3.12-slim` không set TZ → chạy UTC, trong khi
+  `now_local()` trả UTC+7. Không đồng bộ thì các API dùng giờ local của process lệch
+  7 tiếng so với JSONL/MySQL: `%(asctime)s` của logging (`logging.Formatter` mặc định
+  dùng `time.localtime`) và `datetime.now()` không tham số (dùng trong `eval/run_*.py`).
+  Triệu chứng: dòng log `11:49` và record `18:49` là CÙNG một thời điểm.
+- Đo khoảng thời gian (latency, TTL) dùng `time.time()`/`time.perf_counter()` — không
+  liên quan múi giờ, đừng đổi sang `now_local()`.
+- Cột `timestamp` trong MySQL là `DATETIME` (không lưu offset) nên nhận naive UTC+7
+  nguyên văn, MariaDB không convert. Đừng đổi sang `TIMESTAMP` — kiểu đó sẽ convert
+  theo `time_zone` của session và làm lệch dữ liệu cũ.
+- Test canh giữ: `tests/test_timezone.py` (spawn tiến trình con với `TZ=UTC` để mô
+  phỏng container — test chạy trên máy dev đã đúng giờ VN sẽ không bắt được bug này).
+
 ### Logging: app sở hữu root logger
 - `api/main.py` gọi `logging.basicConfig(config.LOG_LEVEL, config.LOG_FORMAT)` ngay khi
   import. Mức log đổi qua biến môi trường `LOG_LEVEL`.
