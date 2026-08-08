@@ -18,11 +18,6 @@ from mysql.connector import Error as MySQLError
 
 import config
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [sync] %(message)s",
-    datefmt="%H:%M:%S",
-)
 logger = logging.getLogger(__name__)
 
 _STORE_PATH = Path(__file__).parent / "conversations.jsonl"
@@ -68,7 +63,18 @@ def _ensure_table(conn: mysql.connector.MySQLConnection) -> None:
 
 
 def _read_pending() -> tuple[list[dict], list[int]]:
-    """Đọc tất cả bản ghi chưa sync. Trả về (records, line_indices)."""
+    """Đọc các bản ghi Q&A chưa sync. Trả về (records, line_indices).
+
+    CHỈ lấy record ``type="message"``. File JSONL còn chứa record ``type="feedback"``
+    (ghi bởi ``log_feedback``) — loại này KHÔNG có key ``question``/``answer`` nên nếu
+    lọt vào vòng insert sẽ ném KeyError, thoát khỏi ``sync()`` TRƯỚC ``conn.commit()``
+    → cả batch rollback, ``_mark_synced`` không chạy, và record đó chặn mọi lần sync
+    sau đó vĩnh viễn. Record cũ chưa có field ``type`` được coi là message.
+
+    Feedback vẫn nằm nguyên trong JSONL (chưa đổ vào MySQL — bảng ``conversations``
+    chưa có cột ``message_id`` để ánh xạ); chúng bị bỏ qua ở mỗi lần quét, không tốn
+    thêm chi phí vì hàm này vốn đã đọc cả file.
+    """
     if not _STORE_PATH.exists():
         return [], []
 
@@ -80,6 +86,8 @@ def _read_pending() -> tuple[list[dict], list[int]]:
                 continue
             try:
                 rec = json.loads(line)
+                if rec.get("type", "message") != "message":
+                    continue
                 if not rec.get("synced", False):
                     records.append(rec)
                     indices.append(i)
@@ -158,7 +166,10 @@ def sync(dry_run: bool = False) -> None:
             )
             synced_indices.add(line_idx)
             ok += 1
-        except MySQLError as exc:
+        except Exception as exc:  # noqa: BLE001
+            # Bắt Exception (không chỉ MySQLError): record méo — thiếu key, timestamp
+            # sai format — chỉ được phép làm hỏng CHÍNH NÓ, không kéo sập cả batch.
+            # Trước đây KeyError lọt qua đây, thoát sync() trước commit → mất cả lô.
             logger.warning("Insert thất bại (dòng %d): %s", line_idx, exc)
 
     conn.commit()
@@ -172,6 +183,14 @@ def sync(dry_run: bool = False) -> None:
 
 
 if __name__ == "__main__":
+    # basicConfig CHỈ ở đây, không ở module level: auto_sync import module này trong
+    # tiến trình API, nên cấu hình ở module level sẽ chiếm root logger của cả app và
+    # dán nhãn "[sync]" lên mọi log (kể cả log retry Gemini). Chạy CLI thì vẫn có format riêng.
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [sync] %(message)s",
+        datefmt="%H:%M:%S",
+    )
     dry_run = "--dry-run" in sys.argv
     try:
         sync(dry_run=dry_run)

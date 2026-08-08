@@ -43,7 +43,7 @@ Top 5 notes → Gemini 2.5 Flash → Trả lời + citations
 | Vector store | file `index.json` (in-memory cosine similarity) |
 | Data source | Obsidian Vault (>1000 notes, local) |
 | Deployment | Local — máy công ty |
-| Logging | MySQL (`chatbot_logs.conversations`, port 3307) |
+| Logging | MySQL (`chatbot_logs.conversations`, MariaDB host port 3306) |
 
 ---
 
@@ -84,7 +84,7 @@ project_chatbot/
     ├── conversation_store.py   # Ghi Q&A vào JSONL local (không cần MySQL); get_write_lock()
     ├── auto_sync.py            # Debounce timer per session → trigger sync
     ├── sync_to_mysql.py        # Sync JSONL → MySQL (chỉ module này cần DB credentials)
-    ├── mysql_logger.py         # MySQL connection helper (dùng bởi sync_to_mysql)
+    ├── mysql_logger.py         # DEAD CODE — không module nào import; schema lệch với sync_to_mysql
     └── conversations.jsonl     # Buffer local Q&A (gitignore)
 ```
 
@@ -110,7 +110,46 @@ project_chatbot/
 - Chatbot ghi Q&A vào `logs/conversations.jsonl` (local, không cần MySQL credentials)
 - `auto_sync.py` debounce 180s per `session_id` → khi session idle → gọi `sync_to_mysql.py`
 - Chỉ `sync_to_mysql.py` cần MySQL credentials → giảm attack surface
-- MySQL chạy port **3307** (không phải 3306), database `chatbot_logs`
+- DB đích thực tế là **MariaDB của host, port 3306** (`MYSQL_HOST=host.docker.internal`,
+  `MYSQL_PORT=3306` trong compose), database `chatbot_logs`. Container
+  `project_chatbot-mysql-1` map ra port 3307 nhưng **không được dùng** (0 row) — đừng
+  debug nhầm chỗ; kiểm tra bằng `mariadb -e "SELECT COUNT(*) FROM chatbot_logs.conversations"`
+- `logs/conversations.jsonl` chứa **3 loại record**, phân biệt bằng field `type`:
+  - `message` — Q&A thành công (`log_conversation`), loại DUY NHẤT được sync sang MySQL
+  - `feedback` — thumbs up/down (`log_feedback`)
+  - `error` — request `/chat` thất bại (`log_error`): `question`, `error_type`,
+    `detail` (≤1000 ký tự, thông điệp gốc upstream), `status_code`, `latency_ms`
+- `_read_pending` chỉ lấy `type="message"`; `feedback`/`error` cố tình bị lọc bỏ (bảng
+  `conversations` chưa có cột `message_id` để ánh xạ feedback, và chưa có bảng cho error).
+  **Bất biến**: record không phải `message` KHÔNG được rơi vào vòng insert — chúng thiếu
+  key `question`/`answer`, KeyError sẽ thoát `sync()` trước `commit()` và chặn sync vĩnh viễn.
+  Muốn đổ feedback vào DB phải thêm cột `message_id` + migration, xem `logs/sync_to_mysql.py`
+- Đếm lỗi theo ngày (không cần DB):
+  `jq -r 'select(.type=="error") | .timestamp[:10]' logs/conversations.jsonl | sort | uniq -c`
+
+### Bất biến: mọi đồng hồ trong app đều là UTC+7
+- `config.py` đặt `os.environ["TZ"]` + `time.tzset()` theo `APP_TIMEZONE` (mặc định
+  `Asia/Ho_Chi_Minh`) ngay khi import. Nhờ vậy **giờ local của tiến trình = giờ ghi record**.
+- Cần thiết vì container `python:3.12-slim` không set TZ → chạy UTC, trong khi
+  `now_local()` trả UTC+7. Không đồng bộ thì các API dùng giờ local của process lệch
+  7 tiếng so với JSONL/MySQL: `%(asctime)s` của logging (`logging.Formatter` mặc định
+  dùng `time.localtime`) và `datetime.now()` không tham số (dùng trong `eval/run_*.py`).
+  Triệu chứng: dòng log `11:49` và record `18:49` là CÙNG một thời điểm.
+- Đo khoảng thời gian (latency, TTL) dùng `time.time()`/`time.perf_counter()` — không
+  liên quan múi giờ, đừng đổi sang `now_local()`.
+- Cột `timestamp` trong MySQL là `DATETIME` (không lưu offset) nên nhận naive UTC+7
+  nguyên văn, MariaDB không convert. Đừng đổi sang `TIMESTAMP` — kiểu đó sẽ convert
+  theo `time_zone` của session và làm lệch dữ liệu cũ.
+- Test canh giữ: `tests/test_timezone.py` (spawn tiến trình con với `TZ=UTC` để mô
+  phỏng container — test chạy trên máy dev đã đúng giờ VN sẽ không bắt được bug này).
+
+### Logging: app sở hữu root logger
+- `api/main.py` gọi `logging.basicConfig(config.LOG_LEVEL, config.LOG_FORMAT)` ngay khi
+  import. Mức log đổi qua biến môi trường `LOG_LEVEL`.
+- **Đừng gọi `basicConfig` ở module level trong module con.** `logs/sync_to_mysql.py`
+  từng làm vậy → `auto_sync` import nó trong tiến trình API → chiếm root logger và dán
+  nhãn `[sync]` lên MỌI log (log retry Gemini cũng hiện `[sync]`). Nay `basicConfig` của
+  nó nằm trong khối `__main__`, chỉ áp dụng khi chạy CLI độc lập.
 - Mỗi cuộc trò chuyện có `session_id` UUID riêng — client giữ và gửi kèm mỗi request
 
 ### Bất biến: path-key của record index phải TƯƠNG ĐỐI so với vault root

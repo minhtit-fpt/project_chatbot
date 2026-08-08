@@ -1,4 +1,5 @@
 import os
+import time
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -39,7 +40,21 @@ HOTLINE_NUMBER = os.environ.get("HOTLINE_NUMBER", "0983616996")
 # Múi giờ ứng dụng — mặc định Việt Nam (UTC+7). Đổi qua biến môi trường APP_TIMEZONE.
 # Dùng ZoneInfo nên độc lập với timezone của container/host (container Docker mặc định UTC).
 # Cần gói `tzdata` trong requirements.txt để ZoneInfo chạy được trên image python slim.
-TIMEZONE = ZoneInfo(os.environ.get("APP_TIMEZONE", "Asia/Ho_Chi_Minh"))
+_TIMEZONE_NAME = os.environ.get("APP_TIMEZONE", "Asia/Ho_Chi_Minh")
+TIMEZONE = ZoneInfo(_TIMEZONE_NAME)
+
+# Đồng bộ giờ local của TIẾN TRÌNH với TIMEZONE. Không có dòng này thì container
+# (python:3.12-slim, không set TZ) chạy UTC, và mọi API dùng giờ local của process bị
+# lệch 7 tiếng so với record trong JSONL/MySQL:
+#   - "%(asctime)s" của logging (logging.Formatter mặc định dùng time.localtime)
+#   - datetime.now() không tham số (eval/run_deepeval.py, eval/run_excel_test.py)
+#   - time.localtime(), time.strftime()
+# Hệ quả thực tế: dòng log 11:49 và record 18:49 là CÙNG một thời điểm — không đối
+# chiếu được khi gỡ lỗi. Đặt ở config vì đây là module mọi entrypoint đều import
+# (side effect cùng loại với load_dotenv() ở trên).
+os.environ["TZ"] = _TIMEZONE_NAME
+if hasattr(time, "tzset"):  # POSIX only — Windows không có, bỏ qua vô hại
+    time.tzset()
 
 
 def now_local() -> datetime:
@@ -50,6 +65,13 @@ def now_local() -> datetime:
     thay vì UTC mặc định của container.
     """
     return datetime.now(TIMEZONE).replace(tzinfo=None)
+
+# Logging — app tự sở hữu cấu hình root logger (api/main.py gọi basicConfig lúc import).
+# Trước đây logs/sync_to_mysql.py gọi basicConfig ở module level, nên khi auto_sync
+# import nó thì MỌI log của app bị dán nhãn "[sync]" sai (log retry Gemini cũng hiện
+# "[sync]"). Đổi mức log qua biến môi trường LOG_LEVEL, không cần sửa code.
+LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
+LOG_FORMAT = "%(asctime)s %(levelname)s [%(name)s] %(message)s"
 
 # CORS — comma-separated origins, e.g. "https://example.com,https://shop.example.com"
 # Dùng "*" cho môi trường dev/local. Production nên set cụ thể.

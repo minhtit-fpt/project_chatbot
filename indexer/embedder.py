@@ -3,7 +3,15 @@ from google import genai
 from google.genai import types
 import config
 
-_client = genai.Client(api_key=config.GEMINI_API_KEY)
+# http_options.timeout tính bằng mili-giây — cùng lý do với chat client ở
+# rag/chat_engine.py. embed_query() nằm trên đường nóng MỌI request /chat và chạy
+# trong thread pool của asyncio.to_thread; một call treo không timeout sẽ giữ thread
+# vô hạn, đủ vài call là cạn pool và toàn bộ /chat đứng. Timeout áp cho TỪNG call lẻ
+# (_embed_one gọi 1 text/lần) nên build_index/watcher embed hàng loạt không bị cắt ngang.
+_client = genai.Client(
+    api_key=config.GEMINI_API_KEY,
+    http_options=types.HttpOptions(timeout=int(config.GEMINI_TIMEOUT * 1000)),
+)
 
 
 def embed_texts(texts: list[str], task_type: str = "RETRIEVAL_DOCUMENT") -> list[list[float]]:
