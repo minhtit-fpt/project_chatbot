@@ -2,6 +2,9 @@
 
 > **QUY TẮC**: Luôn đọc file này TRƯỚC KHI bắt đầu bất kỳ công việc nào.
 > Sau khi hoàn thành mỗi phase, cập nhật tiến độ vào `.claude/memory.md`.
+>
+> **Backlog production** (2026-08-08): sau khi chạy thật, các lỗi đo được từ log
+> nằm ở `.claude/plan-prod-log-fixes.md` — ưu tiên cao hơn các phase còn dở dưới đây.
 
 ---
 

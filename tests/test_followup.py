@@ -59,6 +59,9 @@ class _ACRetriever:
         return [{"title": "Điều hòa cây Daikin", "path": "dieu-hoa/Daikin-FVA.md",
                  "content": "x", "score": 0.9, "metadata": {}}]
 
+    def unmatched_model_codes(self, question):
+        return []
+
 
 def test_referential_followup_bypasses_poisoned_cache(monkeypatch):
     """History rỗng + câu follow-up cụt → KHÔNG phục vụ đáp án nhiễm chéo phiên."""

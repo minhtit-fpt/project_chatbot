@@ -1,9 +1,13 @@
 import json
+import logging
 import re
+import time
 import unicodedata
 import numpy as np
 import config
 from indexer.embedder import embed_query
+
+logger = logging.getLogger(__name__)
 
 
 def _remove_diacritics(text: str) -> str:
@@ -64,6 +68,17 @@ def _featured_boost(rec: dict) -> float:
     return 0.0
 
 
+def _code_match_boost(query_codes: set[str], rec: dict) -> float:
+    """Boost lớn khi record mang ĐÚNG mã model khách hỏi.
+
+    Cố tình lớn hơn hẳn keyword/policy/featured boost: khách gõ mã là ý định rõ ràng
+    nhất có thể, phải thắng mọi tín hiệu mờ khác. 0 nếu câu hỏi không chứa mã nào.
+    """
+    if not query_codes:
+        return 0.0
+    return config.CODE_MATCH_BOOST if query_codes & _record_code_tokens(rec) else 0.0
+
+
 def _price_text(content: str) -> str | None:
     """Trích phần giá thô sau nhãn 'Giá:' trong nội dung note.
 
@@ -103,6 +118,15 @@ def _model_code_tokens(text: str) -> set[str]:
     }
 
 
+def _record_code_tokens(rec: dict) -> set[str]:
+    """Các mã model định danh một record — lấy từ title, path và frontmatter keywords."""
+    kw_meta = rec.get("metadata", {}).get("keywords", []) or []
+    kw_str = " ".join(str(k) for k in kw_meta) if isinstance(kw_meta, list) else str(kw_meta)
+    return _model_code_tokens(
+        rec.get("title", "") + " " + rec.get("path", "") + " " + kw_str
+    )
+
+
 def _query_targets_record(query: str, rec: dict) -> bool:
     """True nếu khách hỏi ĐÍCH DANH sản phẩm: query chứa mã model trùng title/keywords.
 
@@ -112,12 +136,21 @@ def _query_targets_record(query: str, rec: dict) -> bool:
     q_codes = _model_code_tokens(query)
     if not q_codes:
         return False
-    kw_meta = rec.get("metadata", {}).get("keywords", []) or []
-    kw_str = " ".join(str(k) for k in kw_meta) if isinstance(kw_meta, list) else str(kw_meta)
-    target_codes = _model_code_tokens(
-        rec.get("title", "") + " " + rec.get("path", "") + " " + kw_str
-    )
-    return bool(q_codes & target_codes)
+    return bool(q_codes & _record_code_tokens(rec))
+
+
+def build_code_index(records: list[dict]) -> dict[str, set[int]]:
+    """Map { mã model -> chỉ số các record chứa mã đó } — dựng MỘT lần lúc load index.
+
+    Embedding rất yếu với chuỗi mã ("u9bkh", "SJ-FXP560V-BK"): cosine trả về sản phẩm
+    cùng danh mục nhưng SAI mã (log id 394, 404, 288, 487, 435). Map này cho phép khớp
+    CHÍNH XÁC trước khi xét cosine, và trả lời được câu "mã khách hỏi có tồn tại không".
+    """
+    index: dict[str, set[int]] = {}
+    for i, rec in enumerate(records):
+        for code in _record_code_tokens(rec):
+            index.setdefault(code, set()).add(i)
+    return index
 
 
 def _select_results(
@@ -153,6 +186,7 @@ class Retriever:
     def __init__(self) -> None:
         self._records: list[dict] = []
         self._matrix: np.ndarray | None = None
+        self._code_index: dict[str, set[int]] = {}
         self._load()
 
     def _load(self) -> None:
@@ -163,14 +197,26 @@ class Retriever:
             )
         records = json.loads(config.INDEX_PATH.read_text(encoding="utf-8"))
         self._records = records
+        self._code_index = build_code_index(records)
         embeddings = [r["embedding"] for r in records]
         matrix = np.array(embeddings, dtype=np.float32)
         norms = np.linalg.norm(matrix, axis=1, keepdims=True)
         norms = np.clip(norms, 1e-9, None)
         self._matrix = matrix / norms
 
+    def unmatched_model_codes(self, question: str) -> list[str]:
+        """Mã model khách hỏi mà KHÔNG record nào trong index có.
+
+        Caller (chat_engine) dùng để bảo model nói thẳng "chưa có mã này" thay vì
+        để cosine đổ ra sản phẩm khác cùng danh mục như thể đúng mã khách hỏi.
+        """
+        return sorted(c for c in _model_code_tokens(question) if c not in self._code_index)
+
     def search(self, question: str, top_k: int = config.TOP_K) -> list[dict]:
+        t_embed = time.perf_counter()
         query_vec = np.array(embed_query(question), dtype=np.float32)
+        embed_ms = int((time.perf_counter() - t_embed) * 1000)
+        t_rank = time.perf_counter()
         norm = np.linalg.norm(query_vec)
         if norm > 0:
             query_vec = query_vec / norm
@@ -187,10 +233,21 @@ class Retriever:
             if _policy_boost(rec) > 0:
                 candidate_idx_set.add(i)
 
+        # Khớp mã CHÍNH XÁC chạy TRƯỚC cosine: record mang đúng mã khách hỏi được
+        # nạp thẳng vào pool dù cosine của nó nằm ngoài top-k ứng viên.
+        q_codes = _model_code_tokens(question)
+        for code in q_codes:
+            candidate_idx_set.update(self._code_index.get(code, ()))
+
         candidates = []
         for idx in candidate_idx_set:
             rec = self._records[idx]
-            boost = _keyword_boost(question, rec) + _policy_boost(rec) + _featured_boost(rec)
+            boost = (
+                _keyword_boost(question, rec)
+                + _policy_boost(rec)
+                + _featured_boost(rec)
+                + _code_match_boost(q_codes, rec)
+            )
             final_score = float(cosine_scores[idx]) + boost
             candidates.append((final_score, idx))
 
@@ -198,7 +255,14 @@ class Retriever:
 
         # Lọc sản phẩm giá "Liên hệ" (chưa bán/hết hàng) NGAY KHI chọn note, để model
         # không bao giờ thấy — không phụ thuộc model tuân thủ rule prompt.
-        return _select_results(question, candidates, self._records, top_k)
+        results = _select_results(question, candidates, self._records, top_k)
+        # Tách bạch embed vs rank: log production chỉ có latency TỔNG nên không biết
+        # 118 request > 8s chậm ở chặng nào (plan-prod-log-fixes B.3.1).
+        logger.info(
+            "retrieval embed=%dms rank=%dms n=%d q=%.60s",
+            embed_ms, int((time.perf_counter() - t_rank) * 1000), len(results), question,
+        )
+        return results
 
     def reload(self) -> None:
         self._load()

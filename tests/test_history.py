@@ -32,6 +32,9 @@ class _StubRetriever:
     def search(self, question):
         return [{"title": "T", "path": "p.md", "content": "x", "score": 0.9, "metadata": {}}]
 
+    def unmatched_model_codes(self, question):
+        return []
+
 
 # ── SessionHistoryStore ──────────────────────────────────────────────────────
 
@@ -349,6 +352,9 @@ class _RecordingRetriever:
         path = "A.md" if question == "câu 1" else "B.md"
         return [{"title": path, "path": path, "content": "x", "score": 0.9, "metadata": {}}]
 
+    def unmatched_model_codes(self, question):
+        return []
+
 
 def test_answer_followup_uses_planned_query_and_carries_prev_docs(monkeypatch):
     _patch_answer_env(monkeypatch)
@@ -385,6 +391,9 @@ def test_answer_comparison_first_turn_searches_each_entity(monkeypatch):
             self.queries.append(q)
             path = "daikin.md" if "Daikin" in q else "gree.md"
             return [{"title": path, "path": path, "content": "x", "score": 0.9, "metadata": {}}]
+
+        def unmatched_model_codes(self, question):
+            return []
 
     retriever = _BrandRetriever()
     monkeypatch.setattr(chat_engine, "get_retriever", lambda: retriever)

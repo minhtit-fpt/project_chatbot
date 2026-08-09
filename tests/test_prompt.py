@@ -82,3 +82,34 @@ def test_build_prompt_omits_link_when_no_match():
         assert "Link sản phẩm:" not in build_prompt("q", [doc])
     finally:
         pb._product_links = None
+
+
+# ── Không khớp mã / không tìm thấy (plan-prod-log-fixes C.1, C.2) ───────────
+
+def test_missing_code_note_added_to_prompt():
+    """Mã khách hỏi không có trong index → prompt phải cấm mô tả sản phẩm khác thay thế."""
+    doc = {"path": "robot/hitachi.md", "title": "Robot Hitachi", "content": "Giá: 9.000.000 đ"}
+    out = build_prompt("robot midea mv15ultraapbk", [doc], ["mv15ultraapbk"])
+    assert "mv15ultraapbk" in out
+    assert "tối đa 2 mẫu" in out
+    assert "không mô tả sản phẩm khác" in out
+
+
+def test_no_missing_code_note_when_all_codes_found():
+    doc = {"path": "robot/hitachi.md", "title": "Robot Hitachi", "content": "Giá: 9.000.000 đ"}
+    assert "LƯU Ý QUAN TRỌNG" not in build_prompt("robot hitachi", [doc], [])
+
+
+def test_missing_code_note_without_any_document():
+    """Không có tài liệu nào → vẫn phải kèm chỉ thị, không để model tự do bịa."""
+    out = build_prompt("robot midea mv15ultraapbk", [], ["mv15ultraapbk"])
+    assert "LƯU Ý QUAN TRỌNG" in out
+
+
+def test_system_prompt_limits_answer_length_and_fallback():
+    # C.2 — khách đã phàn nàn "hỏi 2 mẫu mà trả lời lắm thế" (log id 410)
+    assert "Mặc định trả lời NGẮN" in SYSTEM_PROMPT
+    assert "CHỈ tên + giá + link" in SYSTEM_PROMPT
+    # C.1 — không khớp thì hỏi lại, chỉ gợi ý CÙNG DANH MỤC, tối đa 2
+    assert "HỎI LẠI" in SYSTEM_PROMPT
+    assert "CÙNG DANH MỤC" in SYSTEM_PROMPT

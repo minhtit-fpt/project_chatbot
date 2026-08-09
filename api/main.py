@@ -22,6 +22,35 @@ logging.basicConfig(level=config.LOG_LEVEL, format=config.LOG_FORMAT)
 logger = logging.getLogger(__name__)
 
 
+def _warn_if_vault_stale() -> None:
+    """Cảnh báo nếu note mới nhất trong vault cũ hơn ``config.VAULT_STALE_DAYS`` ngày.
+
+    Vault production từng đứng yên từ 2026-06-05 mà không ai biết: crawler ngừng đẩy
+    note, bot trả "chưa có thông tin" cho mọi sản phẩm mới và triệu chứng trông y hệt
+    lỗi retrieval. Một dòng WARNING lúc khởi động rẻ hơn nhiều giờ gỡ nhầm chỗ.
+    """
+    try:
+        newest = max(
+            (f.stat().st_mtime for f in config.OBSIDIAN_VAULT_PATH.rglob("*.md")),
+            default=None,
+        )
+    except OSError as exc:
+        logger.warning("Không đọc được vault %s: %s", config.OBSIDIAN_VAULT_PATH, exc)
+        return
+    if newest is None:
+        logger.warning("Vault %s không có note .md nào", config.OBSIDIAN_VAULT_PATH)
+        return
+    age_days = (time.time() - newest) / 86400
+    if age_days > config.VAULT_STALE_DAYS:
+        # time.localtime = UTC+7 (config đặt TZ lúc import) → khớp giờ trong log/DB.
+        logger.warning(
+            "Vault đứng yên %d ngày (note mới nhất %s) — kiểm tra crawler rồi chạy "
+            "`python -m indexer.build_index --update`",
+            int(age_days),
+            time.strftime("%Y-%m-%d", time.localtime(newest)),
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Pre-warm index vào RAM khi khởi động (thay cho on_event đã deprecated).
@@ -29,6 +58,7 @@ async def lifespan(app: FastAPI):
         await init_retriever()
     except FileNotFoundError as exc:
         logger.error("Index chưa được build: %s", exc)
+    _warn_if_vault_stale()
     yield
 
 

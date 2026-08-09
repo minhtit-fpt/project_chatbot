@@ -17,6 +17,9 @@ class _StubRetriever:
     def search(self, question):
         return [{"title": "T", "path": "p.md", "content": "x", "score": 0.9, "metadata": {}}]
 
+    def unmatched_model_codes(self, question):
+        return []
+
 
 def _patch_answer_env(monkeypatch):
     monkeypatch.setattr(chat_engine, "get_retriever", lambda: _StubRetriever())

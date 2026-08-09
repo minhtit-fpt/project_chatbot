@@ -94,6 +94,40 @@ class _StubRetriever:
         return [{"title": "Bảo hành", "path": "Chinh-sach-bao-hanh.md",
                  "content": "x", "score": 0.9, "metadata": {}}]
 
+    def unmatched_model_codes(self, question):
+        return []
+
+
+class _ManyDocsRetriever:
+    """Trả nhiều tài liệu; báo mã khách hỏi KHÔNG có trong index."""
+
+    def search(self, question):
+        return [
+            {"title": f"Robot {i}", "path": f"robot/r{i}.md",
+             "content": "Giá: 9.000.000 đ", "score": 0.9, "metadata": {}}
+            for i in range(6)
+        ]
+
+    def unmatched_model_codes(self, question):
+        return ["mv15ultraapbk"]
+
+
+def test_missing_code_caps_context_docs(monkeypatch):
+    """Hỏi mã không có → chỉ tối đa FALLBACK_MAX_DOCS tài liệu đi vào prompt.
+
+    Ràng buộc CỨNG ở tầng code (plan-prod-log-fixes C.1.2): prompt "trả lời ngắn"
+    không đủ tin cậy — log id 454 cho thấy model đổ 1552 ký tự sản phẩm khác loại.
+    """
+    monkeypatch.setattr(chat_engine, "get_retriever", lambda: _ManyDocsRetriever())
+    monkeypatch.setattr(chat_engine, "_generate_answer", lambda messages, history=None: "Đáp án")
+    monkeypatch.setattr(chat_engine, "log_conversation", lambda *a, **k: None)
+    monkeypatch.setattr(chat_engine, "notify_message", lambda *a, **k: None)
+    chat_engine._response_cache = chat_engine._TTLCache(max_size=16, ttl=300)
+
+    result = chat_engine.answer("robot midea mv15ultraapbk", "sess-missing-code")
+
+    assert len(result["sources"]) == config.FALLBACK_MAX_DOCS
+
 
 def test_answer_uses_cache_on_repeat(monkeypatch):
     # Tránh phụ thuộc index.json / API / log thật.

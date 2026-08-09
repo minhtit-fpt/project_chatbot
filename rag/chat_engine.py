@@ -14,6 +14,7 @@ from rag.prompt_builder import SYSTEM_PROMPT, build_prompt
 from rag.retry import call_with_retry, is_retryable
 from rag.history_store import SessionHistoryStore, SessionDocCache
 from rag.followup import is_referential_followup
+from rag.input_guard import GIBBERISH_REPLY, is_gibberish
 from rag.query_rewriter import plan_search_queries
 from rag.suggestions import join_answer_and_suggestions, split_answer_and_suggestions
 from logs.conversation_store import log_conversation
@@ -207,8 +208,40 @@ def get_retriever() -> Retriever:
     return _retriever
 
 
+def _gibberish_response(
+    question: str, session_id: str, t0: float, *, skip_log: bool
+) -> dict:
+    """Trả lời tĩnh cho input rác — không embed, không retrieve, không gọi LLM.
+
+    KHÔNG ghi vào history (rác lọt vào history sẽ đầu độc planner ở lượt sau) và
+    KHÔNG ghi vào response cache. VẪN log ``type="message"`` để đo được tỉ lệ rác —
+    nuốt im lặng thì mất luôn số liệu đã dùng để phát hiện vấn đề này.
+    """
+    latency_ms = int((time.time() - t0) * 1000)
+    message_id = str(uuid.uuid4())
+    if not skip_log:
+        log_conversation(
+            session_id, question, GIBBERISH_REPLY, [], latency_ms, message_id
+        )
+        notify_message(session_id)
+    return {
+        "message_id": message_id,
+        "session_id": session_id,
+        "answer": GIBBERISH_REPLY,
+        "suggestions": [],
+        "sources": [],
+        "latency_ms": latency_ms,
+        "cached": False,
+        "search_queries": None,
+    }
+
+
 def answer(question: str, session_id: str, *, skip_log: bool = False) -> dict:
     t0 = time.time()
+    if is_gibberish(question):
+        logger.info("Input rác, bỏ qua pipeline: %.60s", question)
+        return _gibberish_response(question, session_id, t0, skip_log=skip_log)
+
     history = _history_store.get(session_id)
     # Chỉ cache câu hỏi KHÔNG phụ thuộc ngữ cảnh (lượt đầu của phiên). Khi đã có
     # lịch sử, câu trả lời phụ thuộc các lượt trước → không đọc/không ghi cache chung;
@@ -237,10 +270,15 @@ def answer(question: str, session_id: str, *, skip_log: bool = False) -> dict:
         # câu SO SÁNH → tách mỗi thực thể 1 query; câu thường lượt đầu → giữ nguyên
         # (không tốn LLM-call). Câu hỏi gốc vẫn dùng để dựng prompt (model trả lời
         # đúng câu khách hỏi, chỉ retrieval đổi query).
+        t_plan = time.perf_counter()
         search_queries = plan_search_queries(
             question, history, client=_client, model=config.QUERY_REWRITE_MODEL
         )
+        plan_ms = int((time.perf_counter() - t_plan) * 1000)
+
+        t_retrieve = time.perf_counter()
         result_lists = [retriever.search(q) for q in search_queries]
+        retrieve_ms = int((time.perf_counter() - t_retrieve) * 1000)
         # Carry-forward tài liệu lượt trước CHỈ cho follow-up (lưới an toàn cho câu
         # tham chiếu ngầm); lượt đầu không có gì để carry.
         prev_docs = _doc_cache.get(session_id) if history else []
@@ -248,8 +286,23 @@ def answer(question: str, session_id: str, *, skip_log: bool = False) -> dict:
             result_lists, prev_docs, config.MAX_CONTEXT_DOCS
         )
 
-        messages = build_prompt(question, context_docs)
+        # Khách hỏi mã model mà index không có → cắt nguồn tài liệu xuống tối đa 2 và
+        # bảo model nói thẳng "chưa có mã này". Không cắt thì cosine đổ cả rổ sản phẩm
+        # cùng danh mục và model mô tả chúng như thể đúng mã (log id 454, 496).
+        missing_codes = retriever.unmatched_model_codes(question)
+        if missing_codes:
+            context_docs = context_docs[:config.FALLBACK_MAX_DOCS]
+
+        messages = build_prompt(question, context_docs, missing_codes)
+        t_llm = time.perf_counter()
         raw_answer = _generate_answer(messages, history)
+        # Tách bạch từng chặng: log production chỉ có latency TỔNG nên không chỉ được
+        # mặt 118 request > 8s chậm ở đâu (plan-prod-log-fixes B.3.1).
+        logger.info(
+            "stages plan=%dms retrieve=%dms llm=%dms nq=%d ndocs=%d",
+            plan_ms, retrieve_ms, int((time.perf_counter() - t_llm) * 1000),
+            len(search_queries), len(context_docs),
+        )
         # Câu hỏi rộng → model xuất kèm phần gợi ý sau marker. Tách answer sạch
         # (dùng cho FE/cache/log DB) khỏi danh sách câu gợi ý (field riêng).
         answer_text, suggestions = split_answer_and_suggestions(raw_answer)

@@ -88,7 +88,19 @@ MYSQL_DATABASE = os.environ.get("MYSQL_DATABASE", "chatbot_logs")
 TOP_K = 5
 RETRIEVAL_CANDIDATE_K = 100  # retrieve rộng rồi re-rank với keyword + policy boost
 FEATURED_BOOST = 0.08  # cộng điểm cho note hãng nổi tiếng (frontmatter `featured: true`)
+# Khớp mã model chính xác ("u9bkh", "SJ-FXP560V-BK") — đặt lớn hơn hẳn mọi boost khác
+# vì embedding rất yếu với chuỗi mã, cosine hay trả sản phẩm cùng loại nhưng SAI mã.
+CODE_MATCH_BOOST = 0.5
 EMBEDDING_BATCH_SIZE = 20
+
+# Khách hỏi mã model KHÔNG có trong index → chỉ đưa tối đa ngần này tài liệu cho model
+# gợi ý thay thế. Log cho thấy khi không khớp, bot đổ 1275–1552 ký tự sản phẩm không
+# liên quan (id 454, 496) — cắt nguồn tại đây chắc hơn là nhờ prompt "trả lời ngắn".
+FALLBACK_MAX_DOCS = 2
+
+# Cảnh báo vault đứng yên: crawler ngừng đẩy note mà không ai biết thì bot trả
+# "chưa có thông tin" cho mọi sản phẩm mới (vault production đứng yên từ 2026-06-05).
+VAULT_STALE_DAYS = int(os.environ.get("VAULT_STALE_DAYS", "7"))
 
 # Retry / timeout cho Gemini API
 GEMINI_MAX_RETRIES = len(CHAT_MODEL_CHAIN)  # tự động theo chain

@@ -47,6 +47,17 @@ khi khách hỏi ĐÚNG tên/mã của nó → báo ngắn gọn là chưa có s
 sản phẩm/hãng khách hỏi đều "Liên hệ" → sau khi báo, GỢI Ý thêm sản phẩm cùng loại của hãng khác đang bán \
 (có giá cụ thể). Không để khách ra về tay không khi vẫn còn sản phẩm cùng loại đang bán.
 
+7. Tài liệu KHÔNG khớp thứ khách hỏi (sai mã, sai hãng, hoặc câu hỏi vô nghĩa) → nói ngắn gọn là \
+chưa có, rồi HỎI LẠI để làm rõ nhu cầu. Chỉ được gợi ý sản phẩm khác khi chúng CÙNG DANH MỤC đã xác \
+định (cùng là robot hút bụi, cùng là tivi…), TỐI ĐA 2 mẫu. TUYỆT ĐỐI không ghép sản phẩm khác danh \
+mục lại với nhau chỉ vì trùng vài chữ trong câu hỏi.
+
+ĐỘ DÀI CÂU TRẢ LỜI (khách đã phàn nàn "hỏi 2 mẫu mà trả lời lắm thế"):
+- Mặc định trả lời NGẮN, dưới ~600 ký tự. Chỉ trả lời dài, đầy đủ thông số khi khách hỏi về ĐÚNG MỘT \
+sản phẩm cụ thể (nêu tên/mã) hoặc hỏi thẳng chi tiết.
+- Khi liệt kê nhiều sản phẩm: mỗi mẫu CHỈ tên + giá + link "Xem chi tiết". Không kèm bảng/danh sách \
+thông số kỹ thuật, trừ khi khách hỏi đích danh thông số đó.
+
 PHÂN LOẠI CÂU HỎI & CÁCH TRẢ LỜI (đáp đúng kiểu, không rập khuôn một kiểu cho mọi câu):
 - GIÁ ("bao nhiêu tiền", "giá", "loại nào rẻ"): trả thẳng tên sản phẩm + giá, ngắn gọn; nhiều mẫu thì liệt \
 kê tên + giá, KHÔNG sa đà mô tả tính năng; nêu tình trạng còn hàng nếu tài liệu có.
@@ -120,8 +131,31 @@ Anh/chị ưu tiên tiêu chí nào để em tư vấn mẫu hợp nhất ạ?
 """
 
 
-def build_prompt(question: str, context_docs: list[dict]) -> str:
-    """Return the user message string for the Gemini generate_content API."""
+def _missing_codes_note(missing_codes: list[str]) -> str:
+    """Chỉ thị chèn vào prompt khi khách hỏi mã model KHÔNG có trong index.
+
+    Không có chỉ thị này, model nhận vài tài liệu cùng danh mục do cosine kéo về rồi
+    mô tả chúng như thể đúng mã khách hỏi (log id 454: hỏi robot Midea → đổ 2 robot
+    Hitachi, 1552 ký tự). Ràng buộc cứng số lượng nằm ở tầng code (FALLBACK_MAX_DOCS).
+    """
+    codes = ", ".join(missing_codes)
+    return (
+        f"\n\nLƯU Ý QUAN TRỌNG: tài liệu bên em KHÔNG có mã sản phẩm khách nhắc ({codes}). "
+        "Nói THẲNG là chưa có đúng mã này, TUYỆT ĐỐI không mô tả sản phẩm khác như thể "
+        "là mã đó. Nếu tài liệu có sản phẩm CÙNG LOẠI thì gợi ý tối đa 2 mẫu (tên + giá "
+        "+ link), rồi hỏi lại khách để làm rõ nhu cầu. Trả lời ngắn."
+    )
+
+
+def build_prompt(
+    question: str, context_docs: list[dict], missing_codes: list[str] | None = None
+) -> str:
+    """Return the user message string for the Gemini generate_content API.
+
+    ``missing_codes``: mã model khách hỏi mà index không có (xem
+    ``Retriever.unmatched_model_codes``) — thêm chỉ thị chống bịa sản phẩm thay thế.
+    """
+    suffix = _missing_codes_note(missing_codes) if missing_codes else ""
     if context_docs:
         links = _load_product_links()
         context_parts = []
@@ -134,5 +168,8 @@ def build_prompt(question: str, context_docs: list[dict]) -> str:
                 block += f"\nLink sản phẩm: {url}"
             context_parts.append(block)
         context_block = "\n\n".join(context_parts)
-        return f"Tài liệu tham khảo:\n\n{context_block}\n\nCâu hỏi của khách hàng: {question}"
-    return f"Câu hỏi của khách hàng: {question}"
+        return (
+            f"Tài liệu tham khảo:\n\n{context_block}\n\n"
+            f"Câu hỏi của khách hàng: {question}{suffix}"
+        )
+    return f"Câu hỏi của khách hàng: {question}{suffix}"
